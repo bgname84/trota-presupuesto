@@ -91,8 +91,7 @@
 
   /* Lines */
   .line { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
-  .line .name { font-weight: 700; border: 0; padding: 4px 0; width: 100%; background: transparent; }
-  .line .name:focus { outline: none; border-bottom: 1px solid var(--blue); }
+  .line .lname { font-weight: 700; }
   .line .meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
   .line .tam { font-size: 13px; color: var(--muted); white-space: nowrap; }
   .line .var { flex: 1; padding: 6px 10px; border: 1px dashed var(--line); border-radius: 8px; font-size: 14px; min-width: 80px; }
@@ -364,17 +363,14 @@ function renderEditor() {
   const lineaHTML = (l) => `
     <div class="line" data-id="${l.id}">
       <div class="row">
-        <input class="name" data-f="nombre" value="${esc(l.nombre)}" placeholder="Nombre">
+        <div class="grow"><div class="lname">${esc(l.nombre)}${l.var ? ` <span class="muted">· ${esc(l.var)}</span>` : ""}</div>
+          <div class="small muted">${l.tipo === "servicio" ? "Servicio" : esc(l.tam || "")}</div></div>
+        <button class="btn sm" data-edit>Editar</button>
         <button class="del" data-del title="Quitar">×</button>
-      </div>
-      <div class="meta">
-        ${l.tipo === "servicio" ? `<span class="tag">Servicio</span>` : `<span class="tam">${esc(l.tam || "")}</span>
-        <input class="var" data-f="var" list="variaciones" value="${esc(l.var || "")}" placeholder="Variación (p. ej. 1/2, mini)">`}
       </div>
       <div class="bottom">
         <div class="stepper"><button data-step="-1">−</button><input data-f="cant" type="number" inputmode="numeric" min="0" value="${l.cant}"><button data-step="1">+</button></div>
-        <span class="muted small">×</span>
-        <input class="price money" data-f="precio" type="number" inputmode="decimal" step="0.01" min="0" value="${l.precio}">
+        <span class="muted small">× ${money(l.precio)}</span>
         <div class="importe money">${money(l.precio * l.cant)}</div>
       </div>
     </div>`;
@@ -464,21 +460,15 @@ function renderEditor() {
   ed.addEventListener("click", onLineClick);
   function findLine(el) { const d = el.closest(".line"); return d ? q.lineas.find(l => l.id === d.dataset.id) : null; }
   function onLineInput(e) {
-    const el = e.target, l = findLine(el); if (!l || !el.dataset.f) return;
-    const f = el.dataset.f;
-    if (f === "var") {
-      l.var = el.value;
-      const v = TROTA_VARIACIONES.find(x => x.n.toLowerCase() === el.value.trim().toLowerCase());
-      if (v && l.precioBase) { l.precio = Math.round(l.precioBase * v.f); el.closest(".line").querySelector("[data-f=precio]").value = l.precio; }
-      else if (!el.value.trim() && l.precioBase) { l.precio = l.precioBase; el.closest(".line").querySelector("[data-f=precio]").value = l.precio; }
-    } else if (f === "cant" || f === "precio") l[f] = Number(el.value) || 0;
-    else l[f] = el.value;
+    const el = e.target, l = findLine(el); if (!l || el.dataset.f !== "cant") return;
+    l.cant = Number(el.value) || 0;
     el.closest(".line").querySelector(".importe").textContent = money(l.precio * l.cant);
     persistir(); refreshTotals();
   }
   function onLineClick(e) {
     const el = e.target, l = findLine(el); if (!l) return;
     if (el.hasAttribute("data-del")) { q.lineas = q.lineas.filter(x => x !== l); persistir(); renderEditor(); return; }
+    if (el.hasAttribute("data-edit")) { openEditLine(l); return; }
     if (el.dataset.step) {
       l.cant = Math.max(0, (Number(l.cant) || 0) + Number(el.dataset.step));
       const box = el.closest(".line"); box.querySelector("[data-f=cant]").value = l.cant; box.querySelector(".importe").textContent = money(l.precio * l.cant);
@@ -501,6 +491,42 @@ function totalsHTML(c, q) {
   h += `<div class="t">Total</div><div class="t right money">${money(c.total)}</div>`;
   h += `<div class="muted small" style="grid-column:1/-1;padding-top:6px">${esc(notaIva(q))}</div>`;
   return h;
+}
+
+/* ---------- editar línea ---------- */
+function openEditLine(l) {
+  const q = state.quote, esServ = l.tipo === "servicio";
+  const m = document.createElement("div"); m.className = "modal"; document.body.appendChild(m);
+  m.innerHTML = `<div class="box">
+    <div class="head"><h3>Editar ${esServ ? "servicio" : "producto"}</h3><button class="btn ghost sm" id="cancel">Cancelar</button></div>
+    <div class="body">
+      <div class="field"><label>Nombre</label><input id="en" value="${esc(l.nombre)}"></div>
+      ${esServ ? `<div class="field"><label>Detalle (opcional)</label><input id="ev" value="${esc(l.var || "")}" placeholder="p. ej. 2 personas por 4 horas"></div>`
+      : `<div class="field"><label>Tamaño</label><input id="et" value="${esc(l.tam || "")}" placeholder="p. ej. Lata G 16 oz"></div>
+         <div class="field"><label>Variación</label><input id="ev" list="variaciones" value="${esc(l.var || "")}" placeholder="p. ej. 1/2, mini, tapeo o texto libre">
+           <div class="small muted">${l.precioBase ? `Precio de menú: ${money(l.precioBase)}. Las variaciones 1/2 y mini ajustan el precio al 50 %, tapeo al 25 %.` : ""}</div></div>`}
+      <div class="row">
+        <div class="field grow"><label>Cantidad</label><input id="ec" type="number" inputmode="numeric" min="0" value="${l.cant}"></div>
+        <div class="field grow"><label>Precio unitario</label><input id="ep" type="number" inputmode="decimal" min="0" step="0.01" value="${l.precio}"></div>
+      </div>
+      <button class="btn primary block" id="ok">Guardar cambios</button>
+      <button class="btn ghost block danger" id="rm" style="margin-top:8px">Quitar del presupuesto</button>
+    </div></div>`;
+  const close = () => { m.remove(); renderEditor(); };
+  $("#cancel", m).onclick = close; m.onclick = (e) => { if (e.target === m) close(); };
+  const ev = $("#ev", m), ep = $("#ep", m);
+  if (!esServ) ev.addEventListener("input", () => {
+    const v = TROTA_VARIACIONES.find(x => x.n.toLowerCase() === ev.value.trim().toLowerCase());
+    if (v && l.precioBase) ep.value = Math.round(l.precioBase * v.f);
+    else if (!ev.value.trim() && l.precioBase) ep.value = l.precioBase;
+  });
+  $("#ok", m).onclick = () => {
+    const n = $("#en", m).value.trim(); if (!n) return toast("Escribe el nombre");
+    l.nombre = n; l.var = ev.value.trim(); l.cant = Number($("#ec", m).value) || 0; l.precio = Number(ep.value) || 0;
+    if (!esServ) l.tam = $("#et", m).value.trim();
+    persistir(); close(); toast("Cambios guardados");
+  };
+  $("#rm", m).onclick = () => { q.lineas = q.lineas.filter(x => x !== l); persistir(); close(); };
 }
 
 /* ---------- modal agregar ---------- */
