@@ -200,7 +200,7 @@ const LS_AUTH = "trota_auth", LS_LIST = "trota_presupuestos", LS_CUR = "trota_ac
 
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
-const state = { screen: "login", quote: null, modal: null, cat: "Todos", search: "", variacion: "" };
+const state = { screen: "login", quote: null, modal: null, cat: "Todos", search: "", variacion: "", tipoEsp: "servicio" };
 
 /* ---------- utilidades ---------- */
 function sha256(ascii) {
@@ -249,6 +249,15 @@ function lsDel(key) { try { localStorage.removeItem(key); } catch (e) {} }
 
 /* ---------- datos ---------- */
 function listaGuardados() { return ls(LS_LIST) || []; }
+const LS_ESP = "trota_especiales";
+function especiales() { return ls(LS_ESP) || []; }
+function guardarEspecial(e) {
+  const list = especiales();
+  const dup = list.find(x => x.nombre.toLowerCase() === e.nombre.toLowerCase() && (x.var || "") === (e.var || "") && (x.tam || "") === (e.tam || ""));
+  if (dup) { Object.assign(dup, e); } else list.unshift(Object.assign({ id: uid() }, e));
+  ls(LS_ESP, list);
+}
+function quitarEspecial(id) { ls(LS_ESP, especiales().filter(x => x.id !== id)); }
 function guardar(q) {
   const list = listaGuardados(); q.updatedAt = Date.now();
   const i = list.findIndex(x => x.id === q.id);
@@ -510,6 +519,7 @@ function openEditLine(l) {
         <div class="field grow"><label>Precio unitario</label><input id="ep" type="number" inputmode="decimal" min="0" step="0.01" value="${l.precio}"></div>
       </div>
       <button class="btn primary block" id="ok">Guardar cambios</button>
+      <button class="btn block" id="esp" style="margin-top:8px">Guardar en mis especiales para futuras cotizaciones</button>
       <button class="btn ghost block danger" id="rm" style="margin-top:8px">Quitar del presupuesto</button>
     </div></div>`;
   const close = () => { m.remove(); renderEditor(); };
@@ -525,6 +535,11 @@ function openEditLine(l) {
     l.nombre = n; l.var = ev.value.trim(); l.cant = Number($("#ec", m).value) || 0; l.precio = Number(ep.value) || 0;
     if (!esServ) l.tam = $("#et", m).value.trim();
     persistir(); close(); toast("Cambios guardados");
+  };
+  $("#esp", m).onclick = () => {
+    const n = $("#en", m).value.trim(); if (!n) return toast("Escribe el nombre");
+    guardarEspecial({ tipo: l.tipo, cat: l.cat, nombre: n, var: ev.value.trim(), tam: esServ ? "" : $("#et", m).value.trim(), precio: Number(ep.value) || 0, precioBase: l.precioBase || 0 });
+    toast("Guardado en mis especiales");
   };
   $("#rm", m).onclick = () => { q.lineas = q.lineas.filter(x => x !== l); persistir(); close(); };
 }
@@ -544,7 +559,7 @@ function openModal() {
     m.innerHTML = `<div class="box">
       <div class="head"><h3>Agregar</h3><span class="muted small" id="count">${q.lineas.length} en el presupuesto</span><button class="btn primary sm" id="done">Listo</button></div>
       <div class="body">
-        <div class="tabs"><button data-tab="menu" class="${state.modal === "menu" ? "on" : ""}">Del menú</button><button data-tab="serv" class="${state.modal === "serv" ? "on" : ""}">Servicio especial</button></div>
+        <div class="tabs"><button data-tab="menu" class="${state.modal === "menu" ? "on" : ""}">Del menú</button><button data-tab="serv" class="${state.modal === "serv" ? "on" : ""}">Especiales</button></div>
         ${state.modal === "menu" ? `
           <input class="inp" id="search" placeholder="Buscar producto…" value="${esc(state.search)}" style="margin-top:12px">
           <div class="chips" id="cats">${cats.map(c => `<button class="chip ${state.cat === c ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
@@ -559,15 +574,21 @@ function openModal() {
             </div>`).join("")}`).join("") : `<div class="empty">Sin resultados.</div>`}
           </div>`
         : `
-          <div class="chips">${TROTA_SERVICIOS.map(s => `<button class="chip" data-sug="${esc(s.n)}|${s.p}">${esc(s.n)}</button>`).join("")}</div>
-          <div class="field"><label>Servicio</label><input id="sn" placeholder="p. ej. Personal de apoyo"></div>
+          ${especiales().length ? `<div class="cat-title">Mis especiales guardados</div>
+          ${especiales().map(e => `<div class="mi"><div class="n">${esc(e.nombre)}${e.var ? ` <span class="muted">· ${esc(e.var)}</span>` : ""}<div class="small muted">${e.tipo === "servicio" ? "Servicio" : esc(e.tam || "Producto")}</div></div>
+            <button class="sz" data-addesp="${e.id}">${money(e.precio)}</button><button class="del" data-delesp="${e.id}" title="Quitar de mis especiales">×</button></div>`).join("")}` : ""}
+          <div class="cat-title">Nuevo producto o servicio especial</div>
+          <div class="tabs" style="margin-bottom:10px"><button data-tipo="servicio" class="${state.tipoEsp === "servicio" ? "on" : ""}">Servicio</button><button data-tipo="producto" class="${state.tipoEsp === "producto" ? "on" : ""}">Producto</button></div>
+          ${state.tipoEsp === "servicio" ? `<div class="chips">${TROTA_SERVICIOS.map(s => `<button class="chip" data-sug="${esc(s.n)}|${s.p}">${esc(s.n)}</button>`).join("")}</div>` : ""}
+          <div class="field"><label>Nombre</label><input id="sn" placeholder="${state.tipoEsp === "servicio" ? "p. ej. Personal de apoyo" : "p. ej. Caja de galletas"}"></div>
           <div class="row">
             <div class="field grow"><label>Cantidad</label><input id="sc" type="number" inputmode="numeric" min="1" value="1"></div>
             <div class="field grow"><label>Precio unitario</label><input id="sp" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"></div>
           </div>
-          <div class="field"><label>Detalle (opcional)</label><input id="sd" placeholder="p. ej. 2 personas por 4 horas"></div>
-          <p class="small muted">Los servicios no llevan el descuento general.</p>
-          <button class="btn primary block" id="addServ">Agregar servicio</button>`}
+          <div class="field"><label>${state.tipoEsp === "servicio" ? "Detalle (opcional)" : "Tamaño o detalle (opcional)"}</label><input id="sd" placeholder="${state.tipoEsp === "servicio" ? "p. ej. 2 personas por 4 horas" : "p. ej. 12 pzas"}"></div>
+          <label class="check"><input type="checkbox" id="sg" checked> Guardar en mis especiales para futuras cotizaciones</label>
+          <p class="small muted">${state.tipoEsp === "servicio" ? "Los servicios no llevan el descuento general." : "Los productos sí llevan el descuento general."}</p>
+          <button class="btn primary block" id="addServ">Agregar al presupuesto</button>`}
       </div></div>`;
     $("#done", m).onclick = close;
     m.onclick = (e) => { if (e.target === m) close(); };
@@ -584,10 +605,19 @@ function openModal() {
         persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + n + (v ? " · " + v.n : ""));
       });
     } else {
+      m.querySelectorAll("[data-tipo]").forEach(b => b.onclick = () => { state.tipoEsp = b.dataset.tipo; drawModal(); });
       m.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { const [n, p] = b.dataset.sug.split("|"); $("#sn", m).value = n; $("#sp", m).value = p; $("#sp", m).focus(); });
+      m.querySelectorAll("[data-addesp]").forEach(b => b.onclick = () => {
+        const e = especiales().find(x => x.id === b.dataset.addesp); if (!e) return;
+        q.lineas.push({ id: uid(), tipo: e.tipo, cat: e.tipo === "servicio" ? "Servicios" : (e.cat || "Especiales"), nombre: e.nombre, tam: e.tam || "", var: e.var || "", precioBase: e.precioBase || 0, precio: e.precio, cant: 1 });
+        persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + e.nombre);
+      });
+      m.querySelectorAll("[data-delesp]").forEach(b => b.onclick = () => { quitarEspecial(b.dataset.delesp); drawModal(); });
       $("#addServ", m).onclick = () => {
-        const n = $("#sn", m).value.trim(); if (!n) return toast("Escribe el nombre del servicio");
-        q.lineas.push({ id: uid(), tipo: "servicio", cat: "Servicios", nombre: n, var: $("#sd", m).value.trim(), tam: "", precio: Number($("#sp", m).value) || 0, cant: Number($("#sc", m).value) || 1 });
+        const n = $("#sn", m).value.trim(); if (!n) return toast("Escribe el nombre");
+        const esServ = state.tipoEsp === "servicio", det = $("#sd", m).value.trim(), precio = Number($("#sp", m).value) || 0;
+        q.lineas.push({ id: uid(), tipo: state.tipoEsp, cat: esServ ? "Servicios" : "Especiales", nombre: n, var: esServ ? det : "", tam: esServ ? "" : det, precio, cant: Number($("#sc", m).value) || 1 });
+        if ($("#sg", m).checked) { guardarEspecial({ tipo: state.tipoEsp, nombre: n, var: esServ ? det : "", tam: esServ ? "" : det, precio }); toast("Guardado en mis especiales"); }
         persistir(); close();
       };
     }
