@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0D59F2">
+<title>Presupuestos Trota</title>
+<link rel="icon" href="logo.png">
+<style>
+  :root {
+    --blue: #0D59F2;
+    --blue-dark: #0947c4;
+    --ink: #111;
+    --muted: #6b6b70;
+    --line: #e3e3e8;
+    --bg: #f4f5f8;
+    --card: #fff;
+    --danger: #c62828;
+    --ok: #1b8a3c;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--bg); font-size: 16px; line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  .hidden { display: none !important; }
+
+  /* Layout */
+  .app { max-width: 760px; margin: 0 auto; padding: 0 16px 120px; }
+  .topbar {
+    position: sticky; top: 0; z-index: 10; background: var(--bg);
+    display: flex; align-items: center; gap: 12px; padding: 12px 0; margin-bottom: 8px;
+  }
+  .topbar img { height: 34px; }
+  .topbar h1 { font-size: 18px; margin: 0; flex: 1; font-weight: 700; }
+  .topbar .back { background: none; border: 0; padding: 6px 8px 6px 0; font-weight: 600; color: var(--blue); }
+
+  .card { background: var(--card); border-radius: var(--radius); padding: 16px; margin: 0 0 14px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .card h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; }
+  .row { display: flex; gap: 10px; align-items: center; }
+  .row > * { min-width: 0; }
+  .grow { flex: 1; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .field label { font-size: 13px; color: var(--muted); font-weight: 600; }
+  .field input, .field select, .field textarea, .inp {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; outline: none;
+  }
+  .field input:focus, .field textarea:focus, .inp:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(13,89,242,.12); }
+  textarea { resize: vertical; min-height: 70px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 18px; border-radius: 10px; border: 1px solid var(--line); background: #fff; font-weight: 600; white-space: nowrap;
+  }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.primary:active { background: var(--blue-dark); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--blue); }
+  .btn.danger { color: var(--danger); }
+  .btn.block { width: 100%; }
+  .btn.sm { padding: 8px 12px; font-size: 14px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .right { text-align: right; }
+  .money { font-variant-numeric: tabular-nums; }
+
+  /* Login */
+  .login { max-width: 380px; margin: 10vh auto 0; text-align: center; }
+  .login img { width: 200px; margin-bottom: 8px; }
+  .login .card { text-align: left; }
+  .err { color: var(--danger); font-size: 14px; margin: 6px 0 0; }
+
+  /* Saved list */
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .item { background: #fff; border-radius: var(--radius); padding: 14px 16px; display: flex; gap: 12px; align-items: center; border: 1px solid transparent; }
+  .item:active { border-color: var(--blue); }
+  .item .main { flex: 1; min-width: 0; }
+  .item .title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .sub { font-size: 13px; color: var(--muted); }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: #eef1f6; color: var(--muted); }
+  .badge.ok { background: #e4f5e9; color: var(--ok); }
+  .badge.blue { background: #e7eefe; color: var(--blue); }
+  .empty { text-align: center; color: var(--muted); padding: 30px 10px; }
+
+  /* Lines */
+  .line { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .line .name { font-weight: 700; border: 0; padding: 4px 0; width: 100%; background: transparent; }
+  .line .name:focus { outline: none; border-bottom: 1px solid var(--blue); }
+  .line .meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .line .tam { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .line .var { flex: 1; padding: 6px 10px; border: 1px dashed var(--line); border-radius: 8px; font-size: 14px; min-width: 80px; }
+  .line .var:focus { outline: none; border-style: solid; border-color: var(--blue); }
+  .line .bottom { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  .stepper { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .stepper button { width: 36px; height: 36px; border: 0; background: #fff; font-size: 18px; }
+  .stepper input { width: 52px; text-align: center; border: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); height: 36px; }
+  .price { width: 96px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; text-align: right; }
+  .importe { flex: 1; text-align: right; font-weight: 700; }
+  .del { background: none; border: 0; color: var(--muted); font-size: 20px; line-height: 1; padding: 4px 6px; }
+  .del:hover { color: var(--danger); }
+  .tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--blue); background: #e7eefe; padding: 2px 6px; border-radius: 4px; }
+
+  .totals { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; }
+  .totals .t { font-weight: 800; font-size: 18px; padding-top: 6px; border-top: 1px solid var(--line); }
+
+  .sticky {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 9; background: #fff; border-top: 1px solid var(--line);
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .sticky .in { max-width: 760px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+  .sticky .tot { flex: 1; }
+  .sticky .tot .l { font-size: 12px; color: var(--muted); }
+  .sticky .tot .v { font-size: 20px; font-weight: 800; }
+
+  .check { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+  .check input { width: 22px; height: 22px; accent-color: var(--blue); }
+
+  /* Modal */
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+  .modal .box { background: #fff; width: 100%; max-width: 760px; max-height: 92vh; border-radius: 16px 16px 0 0; display: flex; flex-direction: column; }
+  @media (min-width: 700px) { .modal { align-items: center; } .modal .box { border-radius: 16px; max-height: 86vh; } }
+  .modal .head { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+  .modal .head h3 { margin: 0; font-size: 16px; flex: 1; }
+  .modal .body { overflow: auto; padding: 12px 16px; flex: 1; }
+  .tabs { display: flex; gap: 6px; background: var(--bg); padding: 4px; border-radius: 10px; }
+  .tabs button { flex: 1; border: 0; background: transparent; padding: 8px; border-radius: 8px; font-weight: 600; color: var(--muted); }
+  .tabs button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0; -webkit-overflow-scrolling: touch; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { border: 1px solid var(--line); background: #fff; padding: 6px 12px; border-radius: 999px; font-size: 14px; white-space: nowrap; }
+  .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .chip.blue.on { background: var(--blue); border-color: var(--blue); }
+  .cat-title { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; margin: 14px 0 6px; }
+  .mi { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .mi .n { flex: 1; min-width: 140px; }
+  .mi .sz { border: 1px solid var(--blue); color: var(--blue); background: #fff; border-radius: 8px; padding: 6px 10px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .mi .sz:active { background: var(--blue); color: #fff; }
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 100px; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; z-index: 30; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  /* Sheet (vista previa del presupuesto) */
+  .sheet { background: #fff; border-radius: var(--radius); padding: 22px 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); overflow: hidden; margin-bottom: 14px; }
+  .sheet .sh { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .sheet .sh img { width: 150px; }
+  .sheet .date { font-size: 14px; padding-top: 14px; }
+  .sheet .meta { margin: 20px 0 14px; font-size: 14.5px; }
+  .sheet .meta div { margin: 2px 0; }
+  .sheet h4 { font-size: 14px; margin: 16px 0 6px; font-weight: 700; }
+  .sheet .tw { overflow-x: auto; }
+  .sheet table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .sheet th, .sheet td { border: 1px solid #111; padding: 5px 7px; text-align: left; vertical-align: top; }
+  @media (max-width: 480px) {
+    .sheet { padding: 18px 14px 0; }
+    .sheet .foot { margin: 24px -14px 0; }
+    .sheet table { font-size: 12px; }
+    .sheet th, .sheet td { padding: 4px 5px; }
+  }
+  .sheet th { font-weight: 400; }
+  .sheet td.num, .sheet th.num { text-align: right; white-space: nowrap; }
+  .sheet td.c, .sheet th.c { text-align: center; }
+  .sheet .v { color: #444; }
+  .sheet .tot { margin: 16px 0 0 auto; width: 100%; max-width: 320px; font-size: 14px; }
+  .sheet .tot div { display: flex; justify-content: space-between; padding: 3px 0; }
+  .sheet .tot .big { font-weight: 800; font-size: 17px; border-top: 1px solid #111; margin-top: 4px; padding-top: 6px; }
+  .sheet .notes { margin: 22px 0 0; font-size: 14px; white-space: pre-wrap; }
+  .sheet .foot { margin: 28px -20px 0; }
+  .sheet .foot img { display: block; width: 100%; }
+  .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .actions .wide { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+<div id="toast" class="toast"></div>
+
+<script src="assets.js"></script>
+<script src="menu.js"></script>
+<script src="lib/jspdf.umd.min.js"></script>
+<script src="lib/jspdf.plugin.autotable.min.js"></script>
+<script>
+/* ============================================================
+   Presupuestos Trota — app sencilla sin servidor.
+   Los presupuestos se guardan en el navegador del dispositivo.
+   ============================================================ */
+
+const IVA = 0.16;
+const AUTH_HASH = "cdcbd232af314b2546b3436774ef6fa305d3e738b61f8989d5eaa7c9a13b2a15";
+const LS_AUTH = "trota_auth", LS_LIST = "trota_presupuestos", LS_CUR = "trota_actual";
+
+const $ = (s, el = document) => el.querySelector(s);
+const app = $("#app");
+const state = { screen: "login", quote: null, modal: null, cat: "Todos", search: "", variacion: "" };
+
+/* ---------- utilidades ---------- */
+function sha256(ascii) {
+  function rr(v, a) { return (v >>> a) | (v << (32 - a)); }
+  const maxWord = Math.pow(2, 32); let i, j, result = "";
+  const words = [], bits = ascii.length * 8;
+  const hash = sha256.h = sha256.h || [], k = sha256.k = sha256.k || []; let pc = k.length; const comp = {};
+  for (let c = 2; pc < 64; c++) {
+    if (!comp[c]) { for (i = 0; i < 313; i += c) comp[i] = c; hash[pc] = (Math.pow(c, .5) * maxWord) | 0; k[pc++] = (Math.pow(c, 1 / 3) * maxWord) | 0; }
+  }
+  ascii += "\x80"; while (ascii.length % 64 - 56) ascii += "\x00";
+  for (i = 0; i < ascii.length; i++) { j = ascii.charCodeAt(i); if (j >> 8) return ""; words[i >> 2] |= j << ((3 - i) % 4) * 8; }
+  words[words.length] = ((bits / maxWord) | 0); words[words.length] = (bits);
+  let h = hash.slice(0, 8);
+  for (j = 0; j < words.length;) {
+    const w = words.slice(j, j += 16); const old = h; h = h.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      const w15 = w[i - 15], w2 = w[i - 2], a = h[0], e = h[4];
+      const t1 = h[7] + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & h[5]) ^ ((~e) & h[6])) + k[i] +
+        (w[i] = (i < 16) ? w[i] : (w[i - 16] + (rr(w15, 7) ^ rr(w15, 18) ^ (w15 >>> 3)) + w[i - 7] + (rr(w2, 17) ^ rr(w2, 19) ^ (w2 >>> 10))) | 0);
+      const t2 = (rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & h[1]) ^ (a & h[2]) ^ (h[1] & h[2]));
+      h = [(t1 + t2) | 0].concat(h); h[4] = (h[4] + t1) | 0;
+    }
+    for (i = 0; i < 8; i++) h[i] = (h[i] + old[i]) | 0;
+  }
+  for (i = 0; i < 8; i++) for (j = 3; j + 1; j--) { const b = (h[i] >> (j * 8)) & 255; result += ((b < 16) ? 0 : "") + b.toString(16); }
+  return result;
+}
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function money(n) {
+  n = Math.round((Number(n) || 0) * 100) / 100;
+  const dec = Number.isInteger(n) ? 0 : 2;
+  return "$" + n.toLocaleString("es-MX", { minimumFractionDigits: dec, maximumFractionDigits: 2 });
+}
+function parseDate(s) { if (!s) return null; const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function fechaLarga(s, conDia) {
+  const d = parseDate(s); if (!d) return "";
+  const t = d.toLocaleDateString("es-MX", { weekday: conDia ? "long" : undefined, day: "numeric", month: "long", year: "numeric" }).replace(",", "");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+function hoy() { const d = new Date(); return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-"); }
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1800); }
+function ls(key, val) { try { if (val === undefined) { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } localStorage.setItem(key, JSON.stringify(val)); } catch (e) { return null; } }
+function lsDel(key) { try { localStorage.removeItem(key); } catch (e) {} }
+
+/* ---------- datos ---------- */
+function listaGuardados() { return ls(LS_LIST) || []; }
+function guardar(q) {
+  const list = listaGuardados(); q.updatedAt = Date.now();
+  const i = list.findIndex(x => x.id === q.id);
+  if (i >= 0) list[i] = q; else list.unshift(q);
+  ls(LS_LIST, list);
+}
+function eliminar(id) { ls(LS_LIST, listaGuardados().filter(x => x.id !== id)); }
+function nuevoFolio() {
+  const d = hoy().replace(/-/g, "").slice(2);
+  const n = listaGuardados().filter(q => (q.folio || "").includes("-" + d + "-")).length + 1;
+  return `TR-${d}-${n}`;
+}
+function nuevoPresupuesto() {
+  return {
+    id: uid(), folio: nuevoFolio(), status: "borrador", fecha: hoy(), cliente: "", evento: "", entrega: "",
+    lineas: [], descuento: 0, factura: false, notas: "Pendiente para coordinar detalles de entrega.",
+    createdAt: Date.now(), updatedAt: Date.now()
+  };
+}
+function calc(q) {
+  const sum = (arr) => arr.reduce((a, l) => a + (Number(l.precio) || 0) * (Number(l.cant) || 0), 0);
+  const prods = q.lineas.filter(l => l.tipo === "producto"), servs = q.lineas.filter(l => l.tipo === "servicio");
+  const subProd = sum(prods), desc = subProd * ((Number(q.descuento) || 0) / 100), subServ = sum(servs);
+  const subtotal = subProd - desc + subServ, iva = q.factura ? subtotal * IVA : 0;
+  const r = (x) => Math.round(x * 100) / 100;
+  return { subProd: r(subProd), desc: r(desc), subServ: r(subServ), subtotal: r(subtotal), iva: r(iva), total: r(subtotal + iva), hayServ: servs.length > 0, hayDesc: desc > 0 };
+}
+function grupos(q) {
+  const g = []; const idx = {};
+  q.lineas.filter(l => l.tipo === "producto").forEach(l => {
+    const c = l.cat || "Productos";
+    if (idx[c] === undefined) { idx[c] = g.length; g.push({ cat: c, lineas: [] }); }
+    g[idx[c]].lineas.push(l);
+  });
+  return g;
+}
+function nombreLinea(l) { return l.nombre + (l.var ? " · " + l.var : ""); }
+function notaIva(q) { return q.factura ? "Se requiere factura: el total incluye el 16% de IVA." : "Si desean factura, al precio se agrega el 16% de IVA."; }
+function persistir() { if (state.quote) ls(LS_CUR, state.quote); }
+
+/* ---------- navegación ---------- */
+function go(screen) { state.screen = screen; window.scrollTo(0, 0); render(); }
+function render() {
+  const s = state.screen;
+  if (s === "login") return renderLogin();
+  if (s === "home") return renderHome();
+  if (s === "editor") return renderEditor();
+  if (s === "review") return renderReview();
+}
+
+/* ---------- login ---------- */
+function renderLogin() {
+  app.innerHTML = `
+    <div class="login">
+      <img src="${TROTA_ASSETS.logo}" alt="Trota">
+      <div class="card">
+        <h2>Presupuestos</h2>
+        <form id="f">
+          <div class="field"><label>Usuario</label><input name="u" autocomplete="username" autocapitalize="none" required></div>
+          <div class="field"><label>Contraseña</label><input name="p" type="password" autocomplete="current-password" required></div>
+          <p class="err hidden" id="err">Usuario o contraseña incorrectos.</p>
+          <button class="btn primary block" type="submit">Entrar</button>
+        </form>
+      </div>
+    </div>`;
+  $("#f").onsubmit = (e) => {
+    e.preventDefault();
+    const u = e.target.u.value.trim().toLowerCase(), p = e.target.p.value;
+    if (sha256(u + "|" + p) === AUTH_HASH) { ls(LS_AUTH, 1); go("home"); }
+    else $("#err").classList.remove("hidden");
+  };
+}
+
+/* ---------- inicio ---------- */
+function renderHome() {
+  const list = listaGuardados();
+  app.innerHTML = `
+    <div class="topbar"><img src="${TROTA_ASSETS.logo}" alt="Trota"><h1>Presupuestos</h1>
+      <button class="btn ghost sm" id="logout">Salir</button></div>
+    <button class="btn primary block" id="nuevo" style="margin-bottom:16px">+ Nuevo presupuesto</button>
+    <h2 class="small muted" style="text-transform:uppercase;letter-spacing:.04em">Guardados</h2>
+    <div class="list" id="list">
+      ${list.length ? list.map(q => {
+        const c = calc(q);
+        return `<div class="item" data-id="${q.id}">
+          <div class="main">
+            <div class="title">${esc(q.cliente || "Sin cliente")} <span class="muted small">· ${esc(q.folio)}</span></div>
+            <div class="sub">${q.evento ? "Evento: " + esc(fechaLarga(q.evento, true)) : "Cotizado: " + esc(fechaLarga(q.fecha))} ${q.entrega ? "· " + esc(q.entrega) : ""}</div>
+          </div>
+          <div class="right"><div class="money" style="font-weight:700">${money(c.total)}</div>
+            <span class="badge ${q.status === "aprobado" ? "ok" : ""}">${q.status === "aprobado" ? "Aprobado" : "Borrador"}</span></div>
+          <button class="del" data-del="${q.id}" title="Eliminar">×</button>
+        </div>`; }).join("")
+      : `<div class="empty">Aún no hay presupuestos guardados.</div>`}
+    </div>`;
+  $("#logout").onclick = () => { lsDel(LS_AUTH); go("login"); };
+  $("#nuevo").onclick = () => { state.quote = nuevoPresupuesto(); persistir(); go("editor"); };
+  $("#list").onclick = (e) => {
+    const del = e.target.closest("[data-del]");
+    if (del) { if (confirm("¿Eliminar este presupuesto?")) { eliminar(del.dataset.del); renderHome(); } return; }
+    const it = e.target.closest(".item");
+    if (it) { state.quote = JSON.parse(JSON.stringify(list.find(q => q.id === it.dataset.id))); persistir(); go(state.quote.status === "aprobado" ? "review" : "editor"); }
+  };
+}
+
+/* ---------- editor ---------- */
+function renderEditor() {
+  const q = state.quote, c = calc(q);
+  const lineaHTML = (l) => `
+    <div class="line" data-id="${l.id}">
+      <div class="row">
+        <input class="name" data-f="nombre" value="${esc(l.nombre)}" placeholder="Nombre">
+        <button class="del" data-del title="Quitar">×</button>
+      </div>
+      <div class="meta">
+        ${l.tipo === "servicio" ? `<span class="tag">Servicio</span>` : `<span class="tam">${esc(l.tam || "")}</span>
+        <input class="var" data-f="var" list="variaciones" value="${esc(l.var || "")}" placeholder="Variación (p. ej. 1/2, mini)">`}
+      </div>
+      <div class="bottom">
+        <div class="stepper"><button data-step="-1">−</button><input data-f="cant" type="number" inputmode="numeric" min="0" value="${l.cant}"><button data-step="1">+</button></div>
+        <span class="muted small">×</span>
+        <input class="price money" data-f="precio" type="number" inputmode="decimal" step="0.01" min="0" value="${l.precio}">
+        <div class="importe money">${money(l.precio * l.cant)}</div>
+      </div>
+    </div>`;
+  const prods = q.lineas.filter(l => l.tipo === "producto"), servs = q.lineas.filter(l => l.tipo === "servicio");
+
+  app.innerHTML = `<div id="ed">
+    <div class="topbar"><button class="back" id="back">‹ Inicio</button><h1>${esc(q.folio)}</h1>
+      <button class="btn sm" id="save">Guardar</button></div>
+    <datalist id="variaciones">${TROTA_VARIACIONES.map(v => `<option value="${esc(v.n)}">`).join("")}</datalist>
+
+    <div class="card">
+      <h2>Datos</h2>
+      <div class="field"><label>Cliente</label><input data-q="cliente" value="${esc(q.cliente)}" placeholder="Nombre del cliente o empresa"></div>
+      <div class="row">
+        <div class="field grow"><label>Fecha del evento</label><input data-q="evento" type="date" value="${esc(q.evento)}"></div>
+        <div class="field grow"><label>Fecha de cotización</label><input data-q="fecha" type="date" value="${esc(q.fecha)}"></div>
+      </div>
+      <div class="field"><label>Entrega</label><input data-q="entrega" value="${esc(q.entrega)}" placeholder="Lugar de entrega (p. ej. Polanco)"></div>
+    </div>
+
+    <div class="card">
+      <h2>Productos</h2>
+      <div id="lineas">${prods.length ? prods.map(lineaHTML).join("") : `<div class="empty small">Agrega productos del menú.</div>`}</div>
+      ${servs.length ? `<h2 style="margin-top:16px">Servicios adicionales</h2><div id="servicios">${servs.map(lineaHTML).join("")}</div>` : ""}
+      <button class="btn block" id="add">+ Agregar producto o servicio</button>
+    </div>
+
+    <div class="card">
+      <h2>Descuento y factura</h2>
+      <div class="row">
+        <div class="field grow"><label>Descuento general a productos (%)</label><input data-q="descuento" type="number" inputmode="decimal" min="0" max="100" step="0.5" value="${q.descuento}"></div>
+        <div class="field" style="width:120px"><label>Equivale a</label><div class="inp money" style="border-color:transparent;background:var(--bg)">−${money(c.desc)}</div></div>
+      </div>
+      <label class="check"><input type="checkbox" data-q="factura" ${q.factura ? "checked" : ""}> Requiere factura (se agrega 16% de IVA)</label>
+      <div class="field"><label>Notas</label><textarea data-q="notas">${esc(q.notas)}</textarea></div>
+    </div>
+
+    <div class="card">
+      <h2>Resumen</h2>
+      <div class="totals" id="totals">${totalsHTML(c, q)}</div>
+    </div>
+
+    <div class="sticky"><div class="in">
+      <div class="tot"><div class="l">Total${q.factura ? " con IVA" : ""}</div><div class="v money" id="stickyTotal">${money(c.total)}</div></div>
+      <button class="btn primary" id="review">Revisar presupuesto</button>
+    </div></div></div>`;
+  const ed = $("#ed");
+
+  $("#back").onclick = () => go("home");
+  $("#save").onclick = () => { guardar(q); toast("Presupuesto guardado"); };
+  $("#add").onclick = () => openModal();
+  $("#review").onclick = () => { if (!q.lineas.length) return toast("Agrega al menos un producto"); go("review"); };
+
+  // Campos generales
+  app.querySelectorAll("[data-q]").forEach(el => {
+    el.addEventListener("input", () => {
+      const k = el.dataset.q;
+      q[k] = el.type === "checkbox" ? el.checked : (el.type === "number" ? Number(el.value) : el.value);
+      persistir(); refreshTotals();
+    });
+    if (el.type === "checkbox") el.addEventListener("change", () => { q.factura = el.checked; persistir(); refreshTotals(); });
+  });
+
+  // Líneas (los listeners viven en #ed y se descartan al volver a dibujar)
+  ed.addEventListener("input", onLineInput);
+  ed.addEventListener("click", onLineClick);
+  function findLine(el) { const d = el.closest(".line"); return d ? q.lineas.find(l => l.id === d.dataset.id) : null; }
+  function onLineInput(e) {
+    const el = e.target, l = findLine(el); if (!l || !el.dataset.f) return;
+    const f = el.dataset.f;
+    if (f === "var") {
+      l.var = el.value;
+      const v = TROTA_VARIACIONES.find(x => x.n.toLowerCase() === el.value.trim().toLowerCase());
+      if (v && l.precioBase) { l.precio = Math.round(l.precioBase * v.f); el.closest(".line").querySelector("[data-f=precio]").value = l.precio; }
+      else if (!el.value.trim() && l.precioBase) { l.precio = l.precioBase; el.closest(".line").querySelector("[data-f=precio]").value = l.precio; }
+    } else if (f === "cant" || f === "precio") l[f] = Number(el.value) || 0;
+    else l[f] = el.value;
+    el.closest(".line").querySelector(".importe").textContent = money(l.precio * l.cant);
+    persistir(); refreshTotals();
+  }
+  function onLineClick(e) {
+    const el = e.target, l = findLine(el); if (!l) return;
+    if (el.hasAttribute("data-del")) { q.lineas = q.lineas.filter(x => x !== l); persistir(); renderEditor(); return; }
+    if (el.dataset.step) {
+      l.cant = Math.max(0, (Number(l.cant) || 0) + Number(el.dataset.step));
+      const box = el.closest(".line"); box.querySelector("[data-f=cant]").value = l.cant; box.querySelector(".importe").textContent = money(l.precio * l.cant);
+      persistir(); refreshTotals();
+    }
+  }
+  function refreshTotals() {
+    const c2 = calc(q);
+    $("#totals").innerHTML = totalsHTML(c2, q); $("#stickyTotal").textContent = money(c2.total);
+    const eq = app.querySelector("[data-q=descuento]")?.closest(".row")?.querySelector(".inp"); if (eq) eq.textContent = "−" + money(c2.desc);
+    $(".sticky .l").textContent = "Total" + (q.factura ? " con IVA" : "");
+  }
+}
+function totalsHTML(c, q) {
+  let h = "";
+  if (c.hayDesc || c.hayServ) h += `<div>Productos</div><div class="right money">${money(c.subProd)}</div>`;
+  if (c.hayDesc) h += `<div>Descuento ${q.descuento}%</div><div class="right money">−${money(c.desc)}</div>`;
+  if (c.hayServ) h += `<div>Servicios adicionales</div><div class="right money">${money(c.subServ)}</div>`;
+  h += `<div>Subtotal</div><div class="right money">${money(c.subtotal)}</div>`;
+  if (q.factura) h += `<div>IVA 16%</div><div class="right money">${money(c.iva)}</div>`;
+  h += `<div class="t">Total</div><div class="t right money">${money(c.total)}</div>`;
+  h += `<div class="muted small" style="grid-column:1/-1;padding-top:6px">${esc(notaIva(q))}</div>`;
+  return h;
+}
+
+/* ---------- modal agregar ---------- */
+function openModal() {
+  state.modal = state.modal || "menu"; state.search = ""; state.cat = "Todos"; state.variacion = "";
+  const m = document.createElement("div"); m.className = "modal"; m.id = "modal"; document.body.appendChild(m);
+  drawModal();
+  function close() { m.remove(); renderEditor(); }
+  function drawModal() {
+    const q = state.quote;
+    const cats = ["Todos", ...TROTA_MENU.map(c => c.cat)];
+    const term = state.search.trim().toLowerCase();
+    const visibles = TROTA_MENU.filter(c => state.cat === "Todos" || c.cat === state.cat)
+      .map(c => ({ cat: c.cat, items: c.items.filter(i => !term || i.n.toLowerCase().includes(term)) })).filter(c => c.items.length);
+    m.innerHTML = `<div class="box">
+      <div class="head"><h3>Agregar</h3><span class="muted small" id="count">${q.lineas.length} en el presupuesto</span><button class="btn primary sm" id="done">Listo</button></div>
+      <div class="body">
+        <div class="tabs"><button data-tab="menu" class="${state.modal === "menu" ? "on" : ""}">Del menú</button><button data-tab="serv" class="${state.modal === "serv" ? "on" : ""}">Servicio especial</button></div>
+        ${state.modal === "menu" ? `
+          <input class="inp" id="search" placeholder="Buscar producto…" value="${esc(state.search)}" style="margin-top:12px">
+          <div class="chips" id="cats">${cats.map(c => `<button class="chip ${state.cat === c ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+          <div class="row small muted" style="gap:6px;flex-wrap:wrap"><span>Variación:</span>
+            <button class="chip blue ${!state.variacion ? "on" : ""}" data-var="">Normal</button>
+            ${TROTA_VARIACIONES.map(v => `<button class="chip blue ${state.variacion === v.n ? "on" : ""}" data-var="${esc(v.n)}">${esc(v.n)} (${Math.round(v.f * 100)}%)</button>`).join("")}
+          </div>
+          <div id="items">${visibles.length ? visibles.map(c => `
+            <div class="cat-title">${esc(c.cat)}</div>
+            ${c.items.map(i => `<div class="mi"><div class="n">${esc(i.n)}</div>
+              ${i.s.map((s, k) => `<button class="sz" data-add="${esc(c.cat)}|${esc(i.n)}|${k}">${esc(s.t)} · ${money(state.variacion ? Math.round(s.p * TROTA_VARIACIONES.find(v => v.n === state.variacion).f) : s.p)}</button>`).join("")}
+            </div>`).join("")}`).join("") : `<div class="empty">Sin resultados.</div>`}
+          </div>`
+        : `
+          <div class="chips">${TROTA_SERVICIOS.map(s => `<button class="chip" data-sug="${esc(s.n)}|${s.p}">${esc(s.n)}</button>`).join("")}</div>
+          <div class="field"><label>Servicio</label><input id="sn" placeholder="p. ej. Personal de apoyo"></div>
+          <div class="row">
+            <div class="field grow"><label>Cantidad</label><input id="sc" type="number" inputmode="numeric" min="1" value="1"></div>
+            <div class="field grow"><label>Precio unitario</label><input id="sp" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"></div>
+          </div>
+          <div class="field"><label>Detalle (opcional)</label><input id="sd" placeholder="p. ej. 2 personas por 4 horas"></div>
+          <p class="small muted">Los servicios no llevan el descuento general.</p>
+          <button class="btn primary block" id="addServ">Agregar servicio</button>`}
+      </div></div>`;
+    $("#done", m).onclick = close;
+    m.onclick = (e) => { if (e.target === m) close(); };
+    m.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { state.modal = b.dataset.tab; drawModal(); });
+    if (state.modal === "menu") {
+      const se = $("#search", m);
+      se.oninput = () => { state.search = se.value; const pos = se.selectionStart; drawModal(); const se2 = $("#search", m); se2.focus(); se2.setSelectionRange(pos, pos); };
+      m.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => { state.cat = b.dataset.cat; drawModal(); });
+      m.querySelectorAll("[data-var]").forEach(b => b.onclick = () => { state.variacion = b.dataset.var; drawModal(); });
+      m.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
+        const [cat, n, k] = b.dataset.add.split("|"); const item = TROTA_MENU.find(c => c.cat === cat).items.find(i => i.n === n); const s = item.s[Number(k)];
+        const v = TROTA_VARIACIONES.find(x => x.n === state.variacion);
+        q.lineas.push({ id: uid(), tipo: "producto", cat, nombre: n, tam: s.t, var: v ? v.n : "", precioBase: s.p, precio: v ? Math.round(s.p * v.f) : s.p, cant: 1 });
+        persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + n + (v ? " · " + v.n : ""));
+      });
+    } else {
+      m.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { const [n, p] = b.dataset.sug.split("|"); $("#sn", m).value = n; $("#sp", m).value = p; $("#sp", m).focus(); });
+      $("#addServ", m).onclick = () => {
+        const n = $("#sn", m).value.trim(); if (!n) return toast("Escribe el nombre del servicio");
+        q.lineas.push({ id: uid(), tipo: "servicio", cat: "Servicios adicionales", nombre: n, var: $("#sd", m).value.trim(), tam: "", precio: Number($("#sp", m).value) || 0, cant: Number($("#sc", m).value) || 1 });
+        persistir(); close();
+      };
+    }
+  }
+}
+
+/* ---------- revisión / aprobación ---------- */
+function renderReview() {
+  const q = state.quote, c = calc(q), ap = q.status === "aprobado";
+  app.innerHTML = `
+    <div class="topbar"><button class="back" id="back">‹ ${ap ? "Inicio" : "Editar"}</button><h1>Revisión</h1>
+      <span class="badge ${ap ? "ok" : "blue"}">${ap ? "Aprobado" : "Por aprobar"}</span></div>
+    ${sheetHTML(q, c)}
+    <div class="card">
+      ${ap ? `
+        <div class="actions">
+          <button class="btn primary wide" id="share">Compartir PDF</button>
+          <button class="btn" id="download">Descargar PDF</button>
+          <button class="btn" id="save">Guardar</button>
+          <button class="btn ghost wide" id="modify">Modificar presupuesto</button>
+        </div>`
+      : `
+        <p class="small muted" style="margin:0 0 12px">Revisa que todo esté correcto. Al aprobar podrás compartirlo como PDF o guardarlo.</p>
+        <div class="actions">
+          <button class="btn" id="edit">Editar</button>
+          <button class="btn ok" id="approve">Aprobar</button>
+        </div>`}
+    </div>`;
+  $("#back").onclick = () => go(ap ? "home" : "editor");
+  if (ap) {
+    $("#share").onclick = () => compartirPDF(q);
+    $("#download").onclick = () => descargarPDF(q);
+    $("#save").onclick = () => { guardar(q); toast("Presupuesto guardado"); go("home"); };
+    $("#modify").onclick = () => { q.status = "borrador"; delete q.aprobadoAt; persistir(); go("editor"); };
+  } else {
+    $("#edit").onclick = () => go("editor");
+    $("#approve").onclick = () => { q.status = "aprobado"; q.aprobadoAt = Date.now(); guardar(q); persistir(); toast("Presupuesto aprobado"); renderReview(); };
+  }
+}
+function sheetHTML(q, c) {
+  const tabla = (lineas, esServ) => `<div class="tw"><table>
+    <tr><th>${esServ ? "Servicio" : "Producto"}</th>${esServ ? "" : "<th>Tamaño</th>"}<th class="c">Cant.</th><th class="num">Precio unitario</th><th class="num">Importe</th></tr>
+    ${lineas.map(l => `<tr><td>${esc(l.nombre)}${l.var ? ` <span class="v">· ${esc(l.var)}</span>` : ""}</td>${esServ ? "" : `<td>${esc(l.tam || "")}</td>`}<td class="c">${l.cant}</td><td class="num">${money(l.precio)}</td><td class="num">${money(l.precio * l.cant)}</td></tr>`).join("")}
+  </table></div>`;
+  const servs = q.lineas.filter(l => l.tipo === "servicio");
+  return `<div class="sheet">
+    <div class="sh"><img src="${TROTA_ASSETS.logo}" alt="Trota"><div class="date">${esc(fechaLarga(q.fecha))}</div></div>
+    <div class="meta">
+      <div><b>Presupuesto ${esc(q.folio)}</b></div>
+      ${q.cliente ? `<div>Cliente: ${esc(q.cliente)}</div>` : ""}
+      ${q.evento ? `<div>Fecha evento: ${esc(fechaLarga(q.evento, true))}</div>` : ""}
+      ${q.entrega ? `<div>Entrega: ${esc(q.entrega)}</div>` : ""}
+    </div>
+    ${grupos(q).map(g => `<h4>${esc(g.cat.toUpperCase())}</h4>${tabla(g.lineas, false)}`).join("")}
+    ${servs.length ? `<h4>SERVICIOS ADICIONALES</h4>${tabla(servs, true)}` : ""}
+    <div class="tot">
+      ${(c.hayDesc || c.hayServ) ? `<div><span>Productos</span><span class="money">${money(c.subProd)}</span></div>` : ""}
+      ${c.hayDesc ? `<div><span>Descuento ${q.descuento}%</span><span class="money">−${money(c.desc)}</span></div>` : ""}
+      ${c.hayServ ? `<div><span>Servicios adicionales</span><span class="money">${money(c.subServ)}</span></div>` : ""}
+      <div><span>Subtotal</span><span class="money">${money(c.subtotal)}</span></div>
+      ${q.factura ? `<div><span>IVA 16%</span><span class="money">${money(c.iva)}</span></div>` : ""}
+      <div class="big"><span>Total</span><span class="money">${money(c.total)}</span></div>
+    </div>
+    <div class="notes">${esc(notaIva(q))}${q.notas ? "\n" + esc(q.notas) : ""}</div>
+    <div class="foot"><img src="${TROTA_ASSETS.footer}" alt="trota.mx · Mérida 81 Roma Norte CDMX"></div>
+  </div>`;
+}
+
+/* ---------- PDF ---------- */
+function generarPDF(q) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "letter" });
+  const W = 215.9, H = 279.4, ML = 20, MR = 20, CW = W - ML - MR, FOOT = W * 131 / 1200, BOTTOM = H - FOOT - 8;
+  const c = calc(q);
+  let y = 14;
+  doc.addImage(TROTA_ASSETS.logo, "PNG", ML, y, 46, 46 * 132 / 400);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(17, 17, 17);
+  doc.text(fechaLarga(q.fecha), W - MR, y + 22, { align: "right" });
+  y = 44;
+  doc.setFont("helvetica", "bold"); doc.text("Presupuesto " + q.folio, ML, y); y += 6; doc.setFont("helvetica", "normal");
+  if (q.cliente) { doc.text("Cliente: " + q.cliente, ML, y); y += 5.5; }
+  if (q.evento) { doc.text("Fecha evento: " + fechaLarga(q.evento, true), ML, y); y += 5.5; }
+  if (q.entrega) { doc.text("Entrega: " + q.entrega, ML, y); y += 5.5; }
+  y += 4;
+
+  const ensure = (h) => { if (y + h > BOTTOM) { doc.addPage(); y = 20; } };
+  const tabla = (titulo, lineas, esServ) => {
+    ensure(20);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.text(titulo, ML, y); y += 2;
+    const head = esServ ? [["Servicio", "Cantidad", "Precio unitario", "Importe"]] : [["Producto", "Tamaño", "Cantidad", "Precio unitario", "Importe"]];
+    const body = lineas.map(l => esServ
+      ? [nombreLinea(l), String(l.cant), money(l.precio), money(l.precio * l.cant)]
+      : [nombreLinea(l), l.tam || "", String(l.cant), money(l.precio), money(l.precio * l.cant)]);
+    const cs = esServ
+      ? { 1: { halign: "center", cellWidth: 22 }, 2: { halign: "right", cellWidth: 32 }, 3: { halign: "right", cellWidth: 32 } }
+      : { 1: { cellWidth: 30 }, 2: { halign: "center", cellWidth: 22 }, 3: { halign: "right", cellWidth: 30 }, 4: { halign: "right", cellWidth: 30 } };
+    doc.autoTable({
+      startY: y, head, body, theme: "grid", margin: { left: ML, right: MR, top: 20, bottom: FOOT + 8 },
+      styles: { font: "helvetica", fontSize: 9.5, textColor: [17, 17, 17], lineColor: [17, 17, 17], lineWidth: 0.2, cellPadding: 1.7 },
+      headStyles: { fillColor: [255, 255, 255], textColor: [17, 17, 17], fontStyle: "normal" }, columnStyles: cs
+    });
+    y = doc.lastAutoTable.finalY + 7;
+  };
+  grupos(q).forEach(g => tabla(g.cat.toUpperCase(), g.lineas, false));
+  const servs = q.lineas.filter(l => l.tipo === "servicio");
+  if (servs.length) tabla("SERVICIOS ADICIONALES", servs, true);
+
+  // Totales
+  const rows = [];
+  if (c.hayDesc || c.hayServ) rows.push(["Productos", money(c.subProd)]);
+  if (c.hayDesc) rows.push([`Descuento ${q.descuento}%`, "-" + money(c.desc)]);
+  if (c.hayServ) rows.push(["Servicios adicionales", money(c.subServ)]);
+  rows.push(["Subtotal", money(c.subtotal)]);
+  if (q.factura) rows.push(["IVA 16%", money(c.iva)]);
+  ensure(rows.length * 6 + 14);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
+  const lx = W - MR - 70, rx = W - MR;
+  rows.forEach(r => { doc.text(r[0], lx, y); doc.text(r[1], rx, y, { align: "right" }); y += 6; });
+  doc.setLineWidth(0.3); doc.line(lx, y - 3, rx, y - 3); y += 2;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(12.5);
+  doc.text("Total", lx, y); doc.text(money(c.total), rx, y, { align: "right" }); y += 12;
+
+  // Notas
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
+  const notas = [notaIva(q)].concat(q.notas ? q.notas.split("\n") : []);
+  notas.forEach(t => { const lines = doc.splitTextToSize(t, CW); ensure(lines.length * 5.5); doc.text(lines, ML, y); y += lines.length * 5.5; });
+
+  // Pie de página en todas las páginas
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.addImage(TROTA_ASSETS.footer, "PNG", 0, H - FOOT, W, FOOT); }
+  return doc;
+}
+function nombreArchivo(q) { return ("Presupuesto Trota " + (q.cliente ? q.cliente + " " : "") + q.folio).replace(/[\\/:*?"<>|]+/g, "") + ".pdf"; }
+function descargarPDF(q) { generarPDF(q).save(nombreArchivo(q)); }
+async function compartirPDF(q) {
+  const blob = generarPDF(q).output("blob");
+  const file = new File([blob], nombreArchivo(q), { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: "Presupuesto Trota " + q.folio }); return; } catch (e) { if (e.name === "AbortError") return; }
+  }
+  const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = file.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast("PDF descargado");
+}
+
+/* ---------- arranque ---------- */
+(function init() {
+  if (ls(LS_AUTH)) {
+    const cur = ls(LS_CUR);
+    if (cur && cur.status === "borrador" && cur.lineas && cur.lineas.length) { state.quote = cur; state.screen = "editor"; }
+    else state.screen = "home";
+  }
+  render();
+})();
+</script>
+</body>
+</html>
