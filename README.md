@@ -26,4 +26,4 @@ En el mismo archivo están las sugerencias de servicios (`TROTA_SERVICIOS`), las
 - `index.html` — la app completa.
 - `menu.js` — catálogo de precios.
 - `assets.js` — logo y pie de página (base64).
-- `lib/` — jsPDF y jsPDF-AutoTable para generar el PDF.
+- `jspdf.umd.min.js` y `jspdf.plugin.autotable.min.js` — librerías para generar el PDF.
