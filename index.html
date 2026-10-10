@@ -87,6 +87,7 @@
   .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: #eef1f6; color: var(--muted); }
   .badge.ok { background: #e4f5e9; color: var(--ok); }
   .badge.blue { background: #e7eefe; color: var(--blue); }
+  .badge.warn { background: #fdecea; color: var(--danger); }
   .empty { text-align: center; color: var(--muted); padding: 30px 10px; }
 
   /* Lines */
@@ -200,6 +201,54 @@ const IVA = 0.16;
 const AUTH_HASH = "cdcbd232af314b2546b3436774ef6fa305d3e738b61f8989d5eaa7c9a13b2a15";
 const LS_AUTH = "trota_auth", LS_LIST = "trota_presupuestos", LS_CUR = "trota_actual";
 
+/* ---------- base de datos en línea (Google Apps Script → hoja de cálculo) ---------- */
+// Si DB.url está vacío, la app trabaja solo con el navegador del dispositivo.
+const DB = { url: window.TROTA_DB_URL || "", key: "trota-db-2026-k7m2" };
+const LS_PEND = "trota_pendientes";
+const sync = { estado: "local", ultimo: 0 }; // local | sincronizando | enlinea | sinconexion
+function dbActiva() { return !!DB.url; }
+async function dbCall(body) {
+  const r = await fetch(DB.url, { method: "POST", body: JSON.stringify(Object.assign({ key: DB.key }, body)) });
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || "error"); return j;
+}
+function pendientes() { return ls(LS_PEND) || []; }
+function encolar(op) { const p = pendientes().filter(x => x.clave !== op.clave); p.push(op); ls(LS_PEND, p); }
+async function dbSet(clave, valor) {
+  if (!dbActiva()) return;
+  try { await dbCall({ action: "set", clave, valor }); } catch (e) { encolar({ clave, valor }); setSync("sinconexion"); }
+}
+async function dbDel(clave) {
+  if (!dbActiva()) return;
+  try { await dbCall({ action: "del", clave }); } catch (e) { encolar({ clave, valor: null }); setSync("sinconexion"); }
+}
+async function sincronizar() {
+  if (!dbActiva()) return false;
+  setSync("sincronizando");
+  try {
+    for (const op of pendientes()) { await dbCall(op.valor === null ? { action: "del", clave: op.clave } : { action: "set", clave: op.clave, valor: op.valor }); }
+    ls(LS_PEND, []);
+    const { data } = await dbCall({ action: "all" });
+    // Solo la primera vez que este dispositivo se conecta: lo que tenga guardado y no esté en línea, se sube.
+    if (!ls("trota_migrado")) {
+      for (const q of listaGuardados()) if (!data["presupuesto:" + q.id]) { data["presupuesto:" + q.id] = q; await dbCall({ action: "set", clave: "presupuesto:" + q.id, valor: q }); }
+      if (!data.especiales && especiales().length) { data.especiales = especiales(); await dbCall({ action: "set", clave: "especiales", valor: data.especiales }); }
+      if (!data.catalogo) { const o = ls(LS_CAT); if (o && (Object.keys(o.edits || {}).length || (o.added || []).length || (o.removed || []).length)) { data.catalogo = o; await dbCall({ action: "set", clave: "catalogo", valor: o }); } }
+      ls("trota_migrado", 1);
+    }
+    const lista = Object.keys(data).filter(k => k.startsWith("presupuesto:") && data[k]).map(k => data[k]).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    ls(LS_LIST, lista);
+    if (data.especiales) ls(LS_ESP, data.especiales); else ls(LS_ESP, []);
+    if (data.catalogo) ls(LS_CAT, data.catalogo); else ls(LS_CAT, { edits: {}, added: [], removed: [] });
+    sync.ultimo = Date.now(); setSync("enlinea"); return true;
+  } catch (e) { setSync("sinconexion"); return false; }
+}
+function setSync(estado) { sync.estado = estado; const el = document.getElementById("syncBadge"); if (el) el.outerHTML = syncBadge(); }
+function syncBadge() {
+  if (!dbActiva()) return `<span id="syncBadge"></span>`;
+  const m = { sincronizando: ["", "Sincronizando…"], enlinea: ["ok", "En línea"], sinconexion: ["warn", "Sin conexión"], local: ["", ""] }[sync.estado] || ["", ""];
+  return `<span id="syncBadge" class="badge ${m[0]}" title="Base de datos en línea">${m[1]}</span>`;
+}
+
 const $ = (s, el = document) => el.querySelector(s);
 const app = $("#app");
 const state = { screen: "login", quote: null, modal: null, cat: "Todos", search: "", variacion: "", tipoEsp: "servicio" };
@@ -257,16 +306,16 @@ function guardarEspecial(e) {
   const list = especiales();
   const dup = list.find(x => x.nombre.toLowerCase() === e.nombre.toLowerCase() && (x.var || "") === (e.var || "") && (x.tam || "") === (e.tam || ""));
   if (dup) { Object.assign(dup, e); } else list.unshift(Object.assign({ id: uid() }, e));
-  ls(LS_ESP, list);
+  ls(LS_ESP, list); dbSet("especiales", list);
 }
-function quitarEspecial(id) { ls(LS_ESP, especiales().filter(x => x.id !== id)); }
+function quitarEspecial(id) { const list = especiales().filter(x => x.id !== id); ls(LS_ESP, list); dbSet("especiales", list); }
 function guardar(q) {
   const list = listaGuardados(); q.updatedAt = Date.now();
   const i = list.findIndex(x => x.id === q.id);
   if (i >= 0) list[i] = q; else list.unshift(q);
-  ls(LS_LIST, list);
+  ls(LS_LIST, list); dbSet("presupuesto:" + q.id, q);
 }
-function eliminar(id) { ls(LS_LIST, listaGuardados().filter(x => x.id !== id)); }
+function eliminar(id) { ls(LS_LIST, listaGuardados().filter(x => x.id !== id)); dbDel("presupuesto:" + id); }
 function nuevoFolio() {
   const d = hoy().replace(/-/g, "").slice(2);
   const n = listaGuardados().filter(q => (q.folio || "").includes("-" + d + "-")).length + 1;
@@ -279,18 +328,20 @@ function nuevoPresupuesto() {
     createdAt: Date.now(), updatedAt: Date.now()
   };
 }
-function calc(q) {
+function opciones(q) { return [...new Set(q.lineas.filter(l => l.tipo === "producto" && l.opcion).map(l => l.opcion))]; }
+function calc(q, op) {
   const sum = (arr) => arr.reduce((a, l) => a + (Number(l.precio) || 0) * (Number(l.cant) || 0), 0);
-  const prods = q.lineas.filter(l => l.tipo === "producto"), servs = q.lineas.filter(l => l.tipo === "servicio");
+  // Con opciones: cada opción suma sus productos + los productos comunes (sin opción) + los servicios.
+  const prods = q.lineas.filter(l => l.tipo === "producto" && (op === undefined || !l.opcion || l.opcion === op)), servs = q.lineas.filter(l => l.tipo === "servicio");
   // Subtotal = todas las líneas a precio de lista; el descuento aplica solo a productos.
   const subProd = sum(prods), subServ = sum(servs), desc = subProd * ((Number(q.descuento) || 0) / 100);
   const subtotal = subProd + subServ, base = subtotal - desc, iva = q.factura ? base * IVA : 0;
   const r = (x) => Math.round(x * 100) / 100;
   return { subtotal: r(subtotal), desc: r(desc), iva: r(iva), total: r(base + iva), hayDesc: desc > 0 };
 }
-function grupos(q) {
+function grupos(q, op) {
   const g = []; const idx = {};
-  q.lineas.filter(l => l.tipo === "producto").forEach(l => {
+  q.lineas.filter(l => l.tipo === "producto" && (op === undefined || (l.opcion || "") === op)).forEach(l => {
     const c = l.cat || "Productos";
     if (idx[c] === undefined) { idx[c] = g.length; g.push({ cat: c, lineas: [] }); }
     g[idx[c]].lineas.push(l);
@@ -298,6 +349,16 @@ function grupos(q) {
   return g;
 }
 function nombreLinea(l) { return l.nombre + (l.var ? " · " + l.var : ""); }
+// Secciones del presupuesto: por opción (si las hay) + lo incluido en todas; si no hay opciones, por categoría.
+function secciones(q) {
+  const ops = opciones(q);
+  if (!ops.length) return grupos(q).map(g => ({ titulo: g.cat.toUpperCase(), lineas: g.lineas }));
+  const sec = ops.map(op => ({ titulo: op.toUpperCase(), lineas: q.lineas.filter(l => l.tipo === "producto" && l.opcion === op) }));
+  const comunes = q.lineas.filter(l => l.tipo === "producto" && !l.opcion);
+  if (comunes.length) sec.push({ titulo: "INCLUIDO EN TODAS LAS OPCIONES", lineas: comunes });
+  return sec;
+}
+function totalesPorOpcion(q) { const ops = opciones(q); return ops.length ? ops.map(op => ({ op, c: calc(q, op) })) : [{ op: "", c: calc(q) }]; }
 function notaIva(q) { return q.factura ? "Se requiere factura: el total incluye el 16% de IVA." : "Si desean factura, al precio se agrega el 16% de IVA."; }
 function persistir() { if (state.quote) ls(LS_CUR, state.quote); }
 function normalizar(q) { q.condiciones = Array.isArray(q.condiciones) ? q.condiciones : []; q.lineas = q.lineas || []; if (q.totales === undefined) q.totales = true; return q; }
@@ -337,10 +398,11 @@ function renderLogin() {
 }
 
 /* ---------- inicio ---------- */
-function renderHome() {
+function renderHome(refrescar = true) {
   const list = listaGuardados();
+  if (refrescar && dbActiva()) sincronizar().then(ok => { if (ok && state.screen === "home") renderHome(false); });
   app.innerHTML = `
-    <div class="topbar"><img src="${TROTA_ASSETS.logo}" alt="Trota"><h1>Presupuestos</h1>
+    <div class="topbar"><img src="${TROTA_ASSETS.logo}" alt="Trota"><h1>Presupuestos</h1>${syncBadge()}
       <button class="btn ghost sm" id="logout">Salir</button></div>
     <button class="btn primary block" id="nuevo" style="margin-bottom:16px">+ Nuevo presupuesto</button>
     <h2 class="small muted" style="text-transform:uppercase;letter-spacing:.04em">Guardados</h2>
@@ -352,7 +414,7 @@ function renderHome() {
             <div class="title">${esc(q.cliente || "Sin cliente")} <span class="muted small">· ${esc(q.folio)}</span></div>
             <div class="sub">${q.evento ? "Evento: " + esc(fechaLarga(q.evento, true)) : "Cotizado: " + esc(fechaLarga(q.fecha))} ${q.entrega ? "· " + esc(q.entrega) : ""}</div>
           </div>
-          <div class="right"><div class="money" style="font-weight:700">${q.totales === false ? "Sin totales" : money(c.total)}</div>
+          <div class="right"><div class="money small" style="font-weight:700">${totalCorto(q)}</div>
             <span class="badge ${q.status === "aprobado" ? "ok" : ""}">${q.status === "aprobado" ? "Aprobado" : "Borrador"}</span></div>
           <button class="del" data-del="${q.id}" title="Eliminar">×</button>
         </div>`; }).join("")
@@ -391,6 +453,7 @@ function renderEditor() {
     <div class="topbar"><button class="back" id="back">‹ Inicio</button><h1>${esc(q.folio)}</h1>
       <button class="btn sm" id="save">Guardar</button></div>
     <datalist id="variaciones">${TROTA_VARIACIONES.map(v => `<option value="${esc(v.n)}">`).join("")}</datalist>
+    <datalist id="opciones">${[...new Set(["Opción 1", "Opción 2", "Opción 3", ...opciones(q)])].map(o => `<option value="${esc(o)}">`).join("")}</datalist>
 
     <div class="card">
       <h2>Datos</h2>
@@ -404,7 +467,9 @@ function renderEditor() {
 
     <div class="card">
       <h2>Productos</h2>
-      <div id="lineas">${prods.length ? prods.map(lineaHTML).join("") : `<div class="empty small">Agrega productos del menú.</div>`}</div>
+      <div id="lineas">${prods.length ? (opciones(q).length
+        ? opciones(q).map(op => `<div class="cat-title">${esc(op)}</div>${prods.filter(l => l.opcion === op).map(lineaHTML).join("")}`).join("") + (prods.some(l => !l.opcion) ? `<div class="cat-title">Incluido en todas las opciones</div>${prods.filter(l => !l.opcion).map(lineaHTML).join("")}` : "")
+        : prods.map(lineaHTML).join("")) : `<div class="empty small">Agrega productos del menú.</div>`}</div>
       ${servs.length ? `<h2 style="margin-top:16px">Servicios</h2><div id="servicios">${servs.map(lineaHTML).join("")}</div>` : ""}
       <button class="btn block" id="add">+ Agregar producto o servicio</button>
     </div>
@@ -439,7 +504,7 @@ function renderEditor() {
     </div>
 
     <div class="sticky"><div class="in">
-      <div class="tot"><div class="l">Total${q.factura ? " con IVA" : ""}</div><div class="v money" id="stickyTotal">${q.totales ? money(c.total) : "Sin totales"}</div></div>
+      <div class="tot"><div class="l">Total${q.factura ? " con IVA" : ""}</div><div class="v money" id="stickyTotal" style="${opciones(q).length > 1 ? "font-size:14px" : ""}">${totalCorto(q)}</div></div>
       <button class="btn primary" id="review">Revisar presupuesto</button>
     </div></div></div>`;
   const ed = $("#ed");
@@ -488,7 +553,7 @@ function renderEditor() {
   }
   function refreshTotals() {
     const c2 = calc(q);
-    $("#totals").innerHTML = totalsHTML(c2, q); $("#stickyTotal").textContent = q.totales ? money(c2.total) : "Sin totales";
+    $("#totals").innerHTML = totalsHTML(c2, q); $("#stickyTotal").innerHTML = totalCorto(q);
     const eq = app.querySelector("[data-q=descuento]")?.closest(".row")?.querySelector(".inp"); if (eq) eq.textContent = "−" + money(c2.desc);
     $(".sticky .l").textContent = "Total" + (q.factura ? " con IVA" : "");
     $("#descRow").style.display = q.totales ? "" : "none"; $("#resumen").style.display = q.totales ? "" : "none";
@@ -496,13 +561,18 @@ function renderEditor() {
   }
 }
 function totalsHTML(c, q) {
-  let h = `<div>Subtotal</div><div class="right money">${money(c.subtotal)}</div>`;
-  if (c.hayDesc) h += `<div>Descuento ${q.descuento}%</div><div class="right money">−${money(c.desc)}</div>`;
-  if (q.factura) h += `<div>IVA 16%</div><div class="right money">${money(c.iva)}</div>`;
-  h += `<div class="t">Total</div><div class="t right money">${money(c.total)}</div>`;
+  let h = "";
+  totalesPorOpcion(q).forEach(({ op, c }) => {
+    if (op) h += `<div class="small muted" style="grid-column:1/-1;padding-top:8px;font-weight:700">${esc(op)}</div>`;
+    h += `<div>Subtotal</div><div class="right money">${money(c.subtotal)}</div>`;
+    if (c.hayDesc) h += `<div>Descuento ${q.descuento}%</div><div class="right money">−${money(c.desc)}</div>`;
+    if (q.factura) h += `<div>IVA 16%</div><div class="right money">${money(c.iva)}</div>`;
+    h += `<div class="t">Total${op ? " " + esc(op) : ""}</div><div class="t right money">${money(c.total)}</div>`;
+  });
   h += `<div class="muted small" style="grid-column:1/-1;padding-top:6px">${esc(notaIva(q))}</div>`;
   return h;
 }
+function totalCorto(q) { if (!q.totales) return "Sin totales"; const t = totalesPorOpcion(q); return t.length === 1 ? money(t[0].c.total) : t.map(x => `${esc(x.op)}: ${money(x.c.total)}`).join(" · "); }
 
 /* ---------- editar línea ---------- */
 function openEditLine(l) {
@@ -514,6 +584,7 @@ function openEditLine(l) {
       <div class="field"><label>Nombre</label><input id="en" value="${esc(l.nombre)}"></div>
       ${esServ ? `<div class="field"><label>Detalle (opcional)</label><input id="ev" value="${esc(l.var || "")}" placeholder="p. ej. 2 personas por 4 horas"></div>`
       : `<div class="field"><label>Tamaño</label><input id="et" value="${esc(l.tam || "")}" placeholder="p. ej. Lata G 16 oz"></div>
+         <div class="field"><label>Opción (si el presupuesto tiene alternativas)</label><input id="eo" list="opciones" value="${esc(l.opcion || "")}" placeholder="Vacío = incluido en todas las opciones"></div>
          <div class="field"><label>Variación</label><input id="ev" list="variaciones" value="${esc(l.var || "")}" placeholder="p. ej. 1/2, mini, tapeo o texto libre">
            <div class="small muted">${l.precioBase ? `Precio de menú: ${money(l.precioBase)}. Las variaciones 1/2 y mini ajustan el precio al 50 %, tapeo al 25 %.` : ""}</div></div>`}
       <div class="row">
@@ -535,7 +606,7 @@ function openEditLine(l) {
   $("#ok", m).onclick = () => {
     const n = $("#en", m).value.trim(); if (!n) return toast("Escribe el nombre");
     l.nombre = n; l.var = ev.value.trim(); l.cant = Number($("#ec", m).value) || 0; l.precio = Number(ep.value) || 0;
-    if (!esServ) l.tam = $("#et", m).value.trim();
+    if (!esServ) { l.tam = $("#et", m).value.trim(); l.opcion = $("#eo", m).value.trim(); }
     persistir(); close(); toast("Cambios guardados");
   };
   $("#esp", m).onclick = () => {
@@ -566,19 +637,19 @@ function guardarItemCatalogo(id, data) {
   if (!id) o.added.unshift({ id: "c:" + uid(), cat: data.cat, n: data.n, s: data.s });
   else if (id.startsWith("b:")) o.edits[id] = { cat: data.cat, n: data.n, s: data.s };
   else { const a = o.added.find(x => x.id === id); if (a) Object.assign(a, { cat: data.cat, n: data.n, s: data.s }); }
-  ls(LS_CAT, o);
+  ls(LS_CAT, o); dbSet("catalogo", o);
 }
 function quitarItemCatalogo(id) {
   const o = catOverrides();
   if (id.startsWith("b:")) { if (!o.removed.includes(id)) o.removed.push(id); delete o.edits[id]; }
   else o.added = o.added.filter(x => x.id !== id);
-  ls(LS_CAT, o);
+  ls(LS_CAT, o); dbSet("catalogo", o);
 }
-function restaurarItemCatalogo(id) { const o = catOverrides(); delete o.edits[id]; o.removed = o.removed.filter(x => x !== id); ls(LS_CAT, o); }
+function restaurarItemCatalogo(id) { const o = catOverrides(); delete o.edits[id]; o.removed = o.removed.filter(x => x !== id); ls(LS_CAT, o); dbSet("catalogo", o); }
 
 /* ---------- modal agregar ---------- */
 function openModal() {
-  state.modal = "menu"; state.search = ""; state.cat = "Todos"; state.variacion = ""; state.editItem = null;
+  state.modal = "menu"; state.search = ""; state.cat = "Todos"; state.variacion = ""; state.editItem = null; state.opcion = "";
   const m = document.createElement("div"); m.className = "modal"; m.id = "modal"; document.body.appendChild(m);
   drawModal();
   function close() { m.remove(); renderEditor(); }
@@ -598,6 +669,10 @@ function openModal() {
         ${state.modal === "menu" ? `
           <div class="row" style="margin-top:12px"><input class="inp grow" id="search" placeholder="Buscar producto…" value="${esc(state.search)}"><button class="btn sm" id="newItem">+ Nuevo</button></div>
           <div class="chips" id="cats">${cats.map(c => `<button class="chip ${state.cat === c ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+          <div class="row small muted" style="gap:6px;flex-wrap:wrap;margin-bottom:6px"><span>Agregar a:</span>
+            <button class="chip blue ${!state.opcion ? "on" : ""}" data-op="">Todas las opciones</button>
+            ${[...new Set(["Opción 1", "Opción 2", ...opciones(q)])].map(o => `<button class="chip blue ${state.opcion === o ? "on" : ""}" data-op="${esc(o)}">${esc(o)}</button>`).join("")}
+          </div>
           <div class="row small muted" style="gap:6px;flex-wrap:wrap"><span>Variación:</span>
             <button class="chip blue ${!state.variacion ? "on" : ""}" data-var="">Normal</button>
             ${TROTA_VARIACIONES.map(v => `<button class="chip blue ${state.variacion === v.n ? "on" : ""}" data-var="${esc(v.n)}">${esc(v.n)} (${Math.round(v.f * 100)}%)</button>`).join("")}
@@ -635,18 +710,19 @@ function openModal() {
       $("#newItem", m).onclick = () => { state.editItem = null; state.modal = "item"; drawModal(); };
       m.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => { state.cat = b.dataset.cat; drawModal(); });
       m.querySelectorAll("[data-var]").forEach(b => b.onclick = () => { state.variacion = b.dataset.var; drawModal(); });
+      m.querySelectorAll("[data-op]").forEach(b => b.onclick = () => { state.opcion = b.dataset.op; drawModal(); });
       m.querySelectorAll("[data-edititem]").forEach(b => b.onclick = () => { state.editItem = b.dataset.edititem; state.modal = "item"; drawModal(); });
       m.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
         const r = itemPorId(b.dataset.add); if (!r) return; const sz = r.item.s[Number(b.dataset.k)];
         const v = TROTA_VARIACIONES.find(x => x.n === state.variacion);
-        q.lineas.push({ id: uid(), tipo: "producto", cat: r.cat, nombre: r.item.n, tam: sz.t, var: v ? v.n : "", precioBase: sz.p, precio: v ? Math.round(sz.p * v.f) : sz.p, cant: 1 });
-        persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + r.item.n + (v ? " · " + v.n : ""));
+        q.lineas.push({ id: uid(), tipo: "producto", cat: r.cat, nombre: r.item.n, tam: sz.t, var: v ? v.n : "", opcion: state.opcion, precioBase: sz.p, precio: v ? Math.round(sz.p * v.f) : sz.p, cant: 1 });
+        persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + r.item.n + (v ? " · " + v.n : "") + (state.opcion ? " → " + state.opcion : ""));
       });
     } else {
       m.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { const [n, p] = b.dataset.sug.split("|"); $("#sn", m).value = n; $("#sp", m).value = p; $("#sp", m).focus(); });
       m.querySelectorAll("[data-addesp]").forEach(b => b.onclick = () => {
         const e = especiales().find(x => x.id === b.dataset.addesp); if (!e) return;
-        q.lineas.push({ id: uid(), tipo: e.tipo, cat: e.tipo === "servicio" ? "Servicios" : (e.cat || "Especiales"), nombre: e.nombre, tam: e.tam || "", var: e.var || "", precioBase: e.precioBase || 0, precio: e.precio, cant: 1 });
+        q.lineas.push({ id: uid(), tipo: e.tipo, cat: e.tipo === "servicio" ? "Servicios" : (e.cat || "Especiales"), nombre: e.nombre, tam: e.tam || "", var: e.var || "", opcion: e.tipo === "servicio" ? "" : state.opcion, precioBase: e.precioBase || 0, precio: e.precio, cant: 1 });
         persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + e.nombre);
       });
       m.querySelectorAll("[data-delesp]").forEach(b => b.onclick = () => { quitarEspecial(b.dataset.delesp); drawModal(); });
@@ -746,14 +822,18 @@ function sheetHTML(q, c) {
       ${q.evento ? `<div>Fecha evento: ${esc(fechaLarga(q.evento, true))}</div>` : ""}
       ${q.entrega ? `<div>Entrega: ${esc(q.entrega)}</div>` : ""}
     </div>
-    ${grupos(q).map(g => `<h4>${esc(g.cat.toUpperCase())}</h4>${tabla(g.lineas, false)}`).join("")}
+    ${secciones(q).map(g => `<h4>${esc(g.titulo)}</h4>${tabla(g.lineas, false)}`).join("")}
     ${servs.length ? `<h4>SERVICIOS</h4>${tabla(servs, true)}` : ""}
-    ${T ? `<div class="tot">
+    ${T && opciones(q).length > 1 ? (() => { const tp = totalesPorOpcion(q), hayDesc = tp.some(x => x.c.hayDesc); return `<h4>TOTALES</h4><div class="tw"><table>
+      <tr><th>Opción</th><th class="num">Subtotal</th>${hayDesc ? `<th class="num">Descuento ${q.descuento}%</th>` : ""}${q.factura ? `<th class="num">IVA 16%</th>` : ""}<th class="num">Total</th></tr>
+      ${tp.map(({ op, c }) => `<tr><td>${esc(op)}</td><td class="num">${money(c.subtotal)}</td>${hayDesc ? `<td class="num">−${money(c.desc)}</td>` : ""}${q.factura ? `<td class="num">${money(c.iva)}</td>` : ""}<td class="num"><b>${money(c.total)}</b></td></tr>`).join("")}
+    </table></div>`; })() : T ? totalesPorOpcion(q).map(({ op, c }) => `<div class="tot">
+      ${op ? `<div><b>${esc(op)}</b></div>` : ""}
       <div><span>Subtotal</span><span class="money">${money(c.subtotal)}</span></div>
       ${c.hayDesc ? `<div><span>Descuento ${q.descuento}%</span><span class="money">−${money(c.desc)}</span></div>` : ""}
       ${q.factura ? `<div><span>IVA 16%</span><span class="money">${money(c.iva)}</span></div>` : ""}
-      <div class="big"><span>Total</span><span class="money">${money(c.total)}</span></div>
-    </div>` : ""}
+      <div class="big"><span>Total${op ? " " + esc(op) : ""}</span><span class="money">${money(c.total)}</span></div>
+    </div>`).join("") : ""}
     <h4>CONDICIONES</h4>
     <ul class="conds">${condicionesLista(q).map(c => `<li>${esc(c)}</li>`).join("")}</ul>
     ${q.notas ? `<div class="notes">${esc(q.notas)}</div>` : ""}
@@ -786,7 +866,7 @@ function generarPDF(q) {
     const head = [[esServ ? "Servicio" : "Producto"].concat(esServ ? [] : ["Tamaño"]).concat(T ? ["Cantidad", "Precio unitario", "Importe"] : ["Precio por unidad"])];
     const body = lineas.map(l => [nombreLinea(l)].concat(esServ ? [] : [l.tam || ""]).concat(T ? [String(l.cant), money(l.precio), money(l.precio * l.cant)] : [money(l.precio)]));
     const cs = {}; let i = esServ ? 1 : 2;
-    if (!esServ) cs[1] = { cellWidth: 30 };
+    if (!esServ) cs[1] = { cellWidth: 40 };
     if (T) { cs[i] = { halign: "center", cellWidth: 22 }; cs[i + 1] = { halign: "right", cellWidth: 30 }; cs[i + 2] = { halign: "right", cellWidth: 30 }; }
     else cs[i] = { halign: "right", cellWidth: 40 };
     doc.autoTable({
@@ -796,22 +876,37 @@ function generarPDF(q) {
     });
     y = doc.lastAutoTable.finalY + 7;
   };
-  grupos(q).forEach(g => tabla(g.cat.toUpperCase(), g.lineas, false));
+  secciones(q).forEach(g => tabla(g.titulo, g.lineas, false));
   const servs = q.lineas.filter(l => l.tipo === "servicio");
   if (servs.length) tabla("SERVICIOS", servs, true);
 
-  // Totales (solo si el presupuesto los muestra)
-  if (q.totales) {
-    const rows = [["Subtotal", money(c.subtotal)]];
-    if (c.hayDesc) rows.push([`Descuento ${q.descuento}%`, "-" + money(c.desc)]);
-    if (q.factura) rows.push(["IVA 16%", money(c.iva)]);
-    ensure(rows.length * 6 + 14);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
-    const lx = W - MR - 70, rx = W - MR;
-    rows.forEach(r => { doc.text(r[0], lx, y); doc.text(r[1], rx, y, { align: "right" }); y += 6; });
-    doc.setLineWidth(0.3); doc.line(lx, y - 3, rx, y - 3); y += 2;
-    doc.setFont("helvetica", "bold"); doc.setFontSize(12.5);
-    doc.text("Total", lx, y); doc.text(money(c.total), rx, y, { align: "right" }); y += 12;
+  // Totales (solo si el presupuesto los muestra); uno por opción cuando hay alternativas
+  if (q.totales && opciones(q).length > 1) {
+    const tp = totalesPorOpcion(q), hayDesc = tp.some(x => x.c.hayDesc);
+    const head = [["Opción", "Subtotal"].concat(hayDesc ? [`Descuento ${q.descuento}%`] : []).concat(q.factura ? ["IVA 16%"] : []).concat(["Total"])];
+    const body = tp.map(({ op, c }) => [op, money(c.subtotal)].concat(hayDesc ? ["-" + money(c.desc)] : []).concat(q.factura ? [money(c.iva)] : []).concat([money(c.total)]));
+    ensure(10 + body.length * 8);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.text("TOTALES", ML, y); y += 2;
+    const cs = {}; for (let i = 1; i < head[0].length; i++) cs[i] = { halign: "right", cellWidth: 32 };
+    cs[head[0].length - 1] = { halign: "right", cellWidth: 32, fontStyle: "bold" };
+    doc.autoTable({ startY: y, head, body, theme: "grid", margin: { left: ML, right: MR, top: 20, bottom: FOOT + 8 },
+      styles: { font: "helvetica", fontSize: 10, textColor: [17, 17, 17], lineColor: [17, 17, 17], lineWidth: 0.2, cellPadding: 1.8 },
+      headStyles: { fillColor: [255, 255, 255], textColor: [17, 17, 17], fontStyle: "normal" }, columnStyles: cs });
+    y = doc.lastAutoTable.finalY + 10;
+  } else if (q.totales) {
+    totalesPorOpcion(q).forEach(({ op, c }) => {
+      const rows = [["Subtotal", money(c.subtotal)]];
+      if (c.hayDesc) rows.push([`Descuento ${q.descuento}%`, "-" + money(c.desc)]);
+      if (q.factura) rows.push(["IVA 16%", money(c.iva)]);
+      ensure(rows.length * 6 + 20);
+      const lx = W - MR - 70, rx = W - MR;
+      if (op) { doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.text(op, lx, y); y += 6; }
+      doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
+      rows.forEach(r => { doc.text(r[0], lx, y); doc.text(r[1], rx, y, { align: "right" }); y += 6; });
+      doc.setLineWidth(0.3); doc.line(lx, y - 3, rx, y - 3); y += 2;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(12.5);
+      doc.text("Total" + (op ? " " + op : ""), lx, y); doc.text(money(c.total), rx, y, { align: "right" }); y += 12;
+    });
   } else y += 4;
 
   // Condiciones
@@ -847,11 +942,15 @@ async function compartirPDF(q) {
 }
 
 /* ---------- arranque ---------- */
-(function init() {
+(async function init() {
   if (ls(LS_AUTH)) {
     const cur = ls(LS_CUR);
     if (cur && cur.status === "borrador" && cur.lineas && cur.lineas.length) { state.quote = normalizar(cur); state.screen = "editor"; }
     else state.screen = "home";
+    if (dbActiva()) {
+      if (state.screen === "home") { app.innerHTML = `<div class="empty" style="padding-top:30vh">Sincronizando con la base de datos…</div>`; await sincronizar(); }
+      else sincronizar();
+    }
   }
   render();
 })();
