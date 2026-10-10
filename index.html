@@ -203,7 +203,7 @@ const LS_AUTH = "trota_auth", LS_LIST = "trota_presupuestos", LS_CUR = "trota_ac
 
 /* ---------- base de datos en línea (Google Apps Script → hoja de cálculo) ---------- */
 // Si DB.url está vacío, la app trabaja solo con el navegador del dispositivo.
-const DB = { url: window.TROTA_DB_URL || "", key: "trota-db-2026-k7m2" };
+const DB = { url: window.TROTA_DB_URL || "https://script.google.com/macros/s/AKfycbwqDttEqUhTAMMGfKXN0zLccdQU9pOzKmiZu1xSuDzbqGPsIuMTlt-imj2NIudQbnNfZA/exec", key: "trota-db-2026-k7m2" };
 const LS_PEND = "trota_pendientes";
 const sync = { estado: "local", ultimo: 0 }; // local | sincronizando | enlinea | sinconexion
 function dbActiva() { return !!DB.url; }
