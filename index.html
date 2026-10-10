@@ -265,17 +265,18 @@ function nuevoFolio() {
 function nuevoPresupuesto() {
   return {
     id: uid(), folio: nuevoFolio(), status: "borrador", fecha: hoy(), cliente: "", evento: "", entrega: "",
-    lineas: [], descuento: 0, factura: false, condiciones: [], notas: "Pendiente para coordinar detalles de entrega.",
+    lineas: [], descuento: 0, factura: false, totales: true, condiciones: [], notas: "Pendiente para coordinar detalles de entrega.",
     createdAt: Date.now(), updatedAt: Date.now()
   };
 }
 function calc(q) {
   const sum = (arr) => arr.reduce((a, l) => a + (Number(l.precio) || 0) * (Number(l.cant) || 0), 0);
   const prods = q.lineas.filter(l => l.tipo === "producto"), servs = q.lineas.filter(l => l.tipo === "servicio");
-  const subProd = sum(prods), desc = subProd * ((Number(q.descuento) || 0) / 100), subServ = sum(servs);
-  const subtotal = subProd - desc + subServ, iva = q.factura ? subtotal * IVA : 0;
+  // Subtotal = todas las líneas a precio de lista; el descuento aplica solo a productos.
+  const subProd = sum(prods), subServ = sum(servs), desc = subProd * ((Number(q.descuento) || 0) / 100);
+  const subtotal = subProd + subServ, base = subtotal - desc, iva = q.factura ? base * IVA : 0;
   const r = (x) => Math.round(x * 100) / 100;
-  return { subProd: r(subProd), desc: r(desc), subServ: r(subServ), subtotal: r(subtotal), iva: r(iva), total: r(subtotal + iva), hayServ: servs.length > 0, hayDesc: desc > 0 };
+  return { subtotal: r(subtotal), desc: r(desc), iva: r(iva), total: r(base + iva), hayDesc: desc > 0 };
 }
 function grupos(q) {
   const g = []; const idx = {};
@@ -289,7 +290,7 @@ function grupos(q) {
 function nombreLinea(l) { return l.nombre + (l.var ? " · " + l.var : ""); }
 function notaIva(q) { return q.factura ? "Se requiere factura: el total incluye el 16% de IVA." : "Si desean factura, al precio se agrega el 16% de IVA."; }
 function persistir() { if (state.quote) ls(LS_CUR, state.quote); }
-function normalizar(q) { q.condiciones = Array.isArray(q.condiciones) ? q.condiciones : []; q.lineas = q.lineas || []; return q; }
+function normalizar(q) { q.condiciones = Array.isArray(q.condiciones) ? q.condiciones : []; q.lineas = q.lineas || []; if (q.totales === undefined) q.totales = true; return q; }
 function condicionesLista(q) { return [notaIva(q)].concat((q.condiciones || []).map(c => c.trim()).filter(Boolean)); }
 
 /* ---------- navegación ---------- */
@@ -341,7 +342,7 @@ function renderHome() {
             <div class="title">${esc(q.cliente || "Sin cliente")} <span class="muted small">· ${esc(q.folio)}</span></div>
             <div class="sub">${q.evento ? "Evento: " + esc(fechaLarga(q.evento, true)) : "Cotizado: " + esc(fechaLarga(q.fecha))} ${q.entrega ? "· " + esc(q.entrega) : ""}</div>
           </div>
-          <div class="right"><div class="money" style="font-weight:700">${money(c.total)}</div>
+          <div class="right"><div class="money" style="font-weight:700">${q.totales === false ? "Sin totales" : money(c.total)}</div>
             <span class="badge ${q.status === "aprobado" ? "ok" : ""}">${q.status === "aprobado" ? "Aprobado" : "Borrador"}</span></div>
           <button class="del" data-del="${q.id}" title="Eliminar">×</button>
         </div>`; }).join("")
@@ -397,13 +398,15 @@ function renderEditor() {
     <div class="card">
       <h2>Productos</h2>
       <div id="lineas">${prods.length ? prods.map(lineaHTML).join("") : `<div class="empty small">Agrega productos del menú.</div>`}</div>
-      ${servs.length ? `<h2 style="margin-top:16px">Servicios adicionales</h2><div id="servicios">${servs.map(lineaHTML).join("")}</div>` : ""}
+      ${servs.length ? `<h2 style="margin-top:16px">Servicios</h2><div id="servicios">${servs.map(lineaHTML).join("")}</div>` : ""}
       <button class="btn block" id="add">+ Agregar producto o servicio</button>
     </div>
 
     <div class="card">
-      <h2>Descuento y factura</h2>
-      <div class="row">
+      <h2>Totales, descuento y factura</h2>
+      <label class="check"><input type="checkbox" data-q="totales" ${q.totales ? "checked" : ""}> Mostrar totales (cantidades, importes y suma)</label>
+      <p class="small muted" style="margin:0 0 8px">Apagado, el presupuesto muestra solo el precio por unidad de cada producto.</p>
+      <div class="row" id="descRow" ${q.totales ? "" : 'style="display:none"'}>
         <div class="field grow"><label>Descuento general a productos (%)</label><input data-q="descuento" type="number" inputmode="decimal" min="0" max="100" step="0.5" value="${q.descuento}"></div>
         <div class="field" style="width:120px"><label>Equivale a</label><div class="inp money" style="border-color:transparent;background:var(--bg)">−${money(c.desc)}</div></div>
       </div>
@@ -423,13 +426,13 @@ function renderEditor() {
       <div class="field"><textarea data-q="notas" placeholder="Comentarios adicionales">${esc(q.notas)}</textarea></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="resumen" ${q.totales ? "" : 'style="display:none"'}>
       <h2>Resumen</h2>
       <div class="totals" id="totals">${totalsHTML(c, q)}</div>
     </div>
 
     <div class="sticky"><div class="in">
-      <div class="tot"><div class="l">Total${q.factura ? " con IVA" : ""}</div><div class="v money" id="stickyTotal">${money(c.total)}</div></div>
+      <div class="tot"><div class="l">Total${q.factura ? " con IVA" : ""}</div><div class="v money" id="stickyTotal">${q.totales ? money(c.total) : "Sin totales"}</div></div>
       <button class="btn primary" id="review">Revisar presupuesto</button>
     </div></div></div>`;
   const ed = $("#ed");
@@ -453,7 +456,7 @@ function renderEditor() {
       q[k] = el.type === "checkbox" ? el.checked : (el.type === "number" ? Number(el.value) : el.value);
       persistir(); refreshTotals();
     });
-    if (el.type === "checkbox") el.addEventListener("change", () => { q.factura = el.checked; persistir(); refreshTotals(); });
+    if (el.type === "checkbox") el.addEventListener("change", () => { q[el.dataset.q] = el.checked; persistir(); refreshTotals(); });
   });
 
   // Líneas (los listeners viven en #ed y se descartan al volver a dibujar)
@@ -484,18 +487,16 @@ function renderEditor() {
   }
   function refreshTotals() {
     const c2 = calc(q);
-    $("#totals").innerHTML = totalsHTML(c2, q); $("#stickyTotal").textContent = money(c2.total);
+    $("#totals").innerHTML = totalsHTML(c2, q); $("#stickyTotal").textContent = q.totales ? money(c2.total) : "Sin totales";
     const eq = app.querySelector("[data-q=descuento]")?.closest(".row")?.querySelector(".inp"); if (eq) eq.textContent = "−" + money(c2.desc);
     $(".sticky .l").textContent = "Total" + (q.factura ? " con IVA" : "");
+    $("#descRow").style.display = q.totales ? "" : "none"; $("#resumen").style.display = q.totales ? "" : "none";
     const iv = $("#ivaNote"); if (iv) iv.textContent = notaIva(q);
   }
 }
 function totalsHTML(c, q) {
-  let h = "";
-  if (c.hayDesc || c.hayServ) h += `<div>Productos</div><div class="right money">${money(c.subProd)}</div>`;
+  let h = `<div>Subtotal</div><div class="right money">${money(c.subtotal)}</div>`;
   if (c.hayDesc) h += `<div>Descuento ${q.descuento}%</div><div class="right money">−${money(c.desc)}</div>`;
-  if (c.hayServ) h += `<div>Servicios adicionales</div><div class="right money">${money(c.subServ)}</div>`;
-  h += `<div>Subtotal</div><div class="right money">${money(c.subtotal)}</div>`;
   if (q.factura) h += `<div>IVA 16%</div><div class="right money">${money(c.iva)}</div>`;
   h += `<div class="t">Total</div><div class="t right money">${money(c.total)}</div>`;
   h += `<div class="muted small" style="grid-column:1/-1;padding-top:6px">${esc(notaIva(q))}</div>`;
@@ -504,7 +505,7 @@ function totalsHTML(c, q) {
 
 /* ---------- modal agregar ---------- */
 function openModal() {
-  state.modal = state.modal || "menu"; state.search = ""; state.cat = "Todos"; state.variacion = "";
+  state.modal = "menu"; state.search = ""; state.cat = "Todos"; state.variacion = "";
   const m = document.createElement("div"); m.className = "modal"; m.id = "modal"; document.body.appendChild(m);
   drawModal();
   function close() { m.remove(); renderEditor(); }
@@ -560,7 +561,7 @@ function openModal() {
       m.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { const [n, p] = b.dataset.sug.split("|"); $("#sn", m).value = n; $("#sp", m).value = p; $("#sp", m).focus(); });
       $("#addServ", m).onclick = () => {
         const n = $("#sn", m).value.trim(); if (!n) return toast("Escribe el nombre del servicio");
-        q.lineas.push({ id: uid(), tipo: "servicio", cat: "Servicios adicionales", nombre: n, var: $("#sd", m).value.trim(), tam: "", precio: Number($("#sp", m).value) || 0, cant: Number($("#sc", m).value) || 1 });
+        q.lineas.push({ id: uid(), tipo: "servicio", cat: "Servicios", nombre: n, var: $("#sd", m).value.trim(), tam: "", precio: Number($("#sp", m).value) || 0, cant: Number($("#sc", m).value) || 1 });
         persistir(); close();
       };
     }
@@ -601,9 +602,10 @@ function renderReview() {
   }
 }
 function sheetHTML(q, c) {
+  const T = q.totales;
   const tabla = (lineas, esServ) => `<div class="tw"><table>
-    <tr><th>${esServ ? "Servicio" : "Producto"}</th>${esServ ? "" : "<th>Tamaño</th>"}<th class="c">Cant.</th><th class="num">Precio unitario</th><th class="num">Importe</th></tr>
-    ${lineas.map(l => `<tr><td>${esc(l.nombre)}${l.var ? ` <span class="v">· ${esc(l.var)}</span>` : ""}</td>${esServ ? "" : `<td>${esc(l.tam || "")}</td>`}<td class="c">${l.cant}</td><td class="num">${money(l.precio)}</td><td class="num">${money(l.precio * l.cant)}</td></tr>`).join("")}
+    <tr><th>${esServ ? "Servicio" : "Producto"}</th>${esServ ? "" : "<th>Tamaño</th>"}${T ? `<th class="c">Cant.</th><th class="num">Precio unitario</th><th class="num">Importe</th>` : `<th class="num">Precio por unidad</th>`}</tr>
+    ${lineas.map(l => `<tr><td>${esc(l.nombre)}${l.var ? ` <span class="v">· ${esc(l.var)}</span>` : ""}</td>${esServ ? "" : `<td>${esc(l.tam || "")}</td>`}${T ? `<td class="c">${l.cant}</td><td class="num">${money(l.precio)}</td><td class="num">${money(l.precio * l.cant)}</td>` : `<td class="num">${money(l.precio)}</td>`}</tr>`).join("")}
   </table></div>`;
   const servs = q.lineas.filter(l => l.tipo === "servicio");
   return `<div class="sheet">
@@ -615,15 +617,13 @@ function sheetHTML(q, c) {
       ${q.entrega ? `<div>Entrega: ${esc(q.entrega)}</div>` : ""}
     </div>
     ${grupos(q).map(g => `<h4>${esc(g.cat.toUpperCase())}</h4>${tabla(g.lineas, false)}`).join("")}
-    ${servs.length ? `<h4>SERVICIOS ADICIONALES</h4>${tabla(servs, true)}` : ""}
-    <div class="tot">
-      ${(c.hayDesc || c.hayServ) ? `<div><span>Productos</span><span class="money">${money(c.subProd)}</span></div>` : ""}
-      ${c.hayDesc ? `<div><span>Descuento ${q.descuento}%</span><span class="money">−${money(c.desc)}</span></div>` : ""}
-      ${c.hayServ ? `<div><span>Servicios adicionales</span><span class="money">${money(c.subServ)}</span></div>` : ""}
+    ${servs.length ? `<h4>SERVICIOS</h4>${tabla(servs, true)}` : ""}
+    ${T ? `<div class="tot">
       <div><span>Subtotal</span><span class="money">${money(c.subtotal)}</span></div>
+      ${c.hayDesc ? `<div><span>Descuento ${q.descuento}%</span><span class="money">−${money(c.desc)}</span></div>` : ""}
       ${q.factura ? `<div><span>IVA 16%</span><span class="money">${money(c.iva)}</span></div>` : ""}
       <div class="big"><span>Total</span><span class="money">${money(c.total)}</span></div>
-    </div>
+    </div>` : ""}
     <h4>CONDICIONES</h4>
     <ul class="conds">${condicionesLista(q).map(c => `<li>${esc(c)}</li>`).join("")}</ul>
     ${q.notas ? `<div class="notes">${esc(q.notas)}</div>` : ""}
@@ -652,13 +652,13 @@ function generarPDF(q) {
   const tabla = (titulo, lineas, esServ) => {
     ensure(20);
     doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.text(titulo, ML, y); y += 2;
-    const head = esServ ? [["Servicio", "Cantidad", "Precio unitario", "Importe"]] : [["Producto", "Tamaño", "Cantidad", "Precio unitario", "Importe"]];
-    const body = lineas.map(l => esServ
-      ? [nombreLinea(l), String(l.cant), money(l.precio), money(l.precio * l.cant)]
-      : [nombreLinea(l), l.tam || "", String(l.cant), money(l.precio), money(l.precio * l.cant)]);
-    const cs = esServ
-      ? { 1: { halign: "center", cellWidth: 22 }, 2: { halign: "right", cellWidth: 32 }, 3: { halign: "right", cellWidth: 32 } }
-      : { 1: { cellWidth: 30 }, 2: { halign: "center", cellWidth: 22 }, 3: { halign: "right", cellWidth: 30 }, 4: { halign: "right", cellWidth: 30 } };
+    const T = q.totales;
+    const head = [[esServ ? "Servicio" : "Producto"].concat(esServ ? [] : ["Tamaño"]).concat(T ? ["Cantidad", "Precio unitario", "Importe"] : ["Precio por unidad"])];
+    const body = lineas.map(l => [nombreLinea(l)].concat(esServ ? [] : [l.tam || ""]).concat(T ? [String(l.cant), money(l.precio), money(l.precio * l.cant)] : [money(l.precio)]));
+    const cs = {}; let i = esServ ? 1 : 2;
+    if (!esServ) cs[1] = { cellWidth: 30 };
+    if (T) { cs[i] = { halign: "center", cellWidth: 22 }; cs[i + 1] = { halign: "right", cellWidth: 30 }; cs[i + 2] = { halign: "right", cellWidth: 30 }; }
+    else cs[i] = { halign: "right", cellWidth: 40 };
     doc.autoTable({
       startY: y, head, body, theme: "grid", margin: { left: ML, right: MR, top: 20, bottom: FOOT + 8 },
       styles: { font: "helvetica", fontSize: 9.5, textColor: [17, 17, 17], lineColor: [17, 17, 17], lineWidth: 0.2, cellPadding: 1.7 },
@@ -668,22 +668,21 @@ function generarPDF(q) {
   };
   grupos(q).forEach(g => tabla(g.cat.toUpperCase(), g.lineas, false));
   const servs = q.lineas.filter(l => l.tipo === "servicio");
-  if (servs.length) tabla("SERVICIOS ADICIONALES", servs, true);
+  if (servs.length) tabla("SERVICIOS", servs, true);
 
-  // Totales
-  const rows = [];
-  if (c.hayDesc || c.hayServ) rows.push(["Productos", money(c.subProd)]);
-  if (c.hayDesc) rows.push([`Descuento ${q.descuento}%`, "-" + money(c.desc)]);
-  if (c.hayServ) rows.push(["Servicios adicionales", money(c.subServ)]);
-  rows.push(["Subtotal", money(c.subtotal)]);
-  if (q.factura) rows.push(["IVA 16%", money(c.iva)]);
-  ensure(rows.length * 6 + 14);
-  doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
-  const lx = W - MR - 70, rx = W - MR;
-  rows.forEach(r => { doc.text(r[0], lx, y); doc.text(r[1], rx, y, { align: "right" }); y += 6; });
-  doc.setLineWidth(0.3); doc.line(lx, y - 3, rx, y - 3); y += 2;
-  doc.setFont("helvetica", "bold"); doc.setFontSize(12.5);
-  doc.text("Total", lx, y); doc.text(money(c.total), rx, y, { align: "right" }); y += 12;
+  // Totales (solo si el presupuesto los muestra)
+  if (q.totales) {
+    const rows = [["Subtotal", money(c.subtotal)]];
+    if (c.hayDesc) rows.push([`Descuento ${q.descuento}%`, "-" + money(c.desc)]);
+    if (q.factura) rows.push(["IVA 16%", money(c.iva)]);
+    ensure(rows.length * 6 + 14);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
+    const lx = W - MR - 70, rx = W - MR;
+    rows.forEach(r => { doc.text(r[0], lx, y); doc.text(r[1], rx, y, { align: "right" }); y += 6; });
+    doc.setLineWidth(0.3); doc.line(lx, y - 3, rx, y - 3); y += 2;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12.5);
+    doc.text("Total", lx, y); doc.text(money(c.total), rx, y, { align: "right" }); y += 12;
+  } else y += 4;
 
   // Condiciones
   ensure(14);
