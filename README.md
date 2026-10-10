@@ -10,14 +10,16 @@ App web sencilla para generar presupuestos de TROTA Run & Café en el formato de
    - Cada producto puede llevar una **variación** (1/2, mini, tapeo o texto libre). Las variaciones 1/2 y mini ponen el precio al 50 % y tapeo al 25 %; el precio siempre se puede corregir a mano.
 4. **Descuento general** en % (aplica solo a productos, no a servicios).
 5. **Requiere factura**: agrega el 16 % de IVA. Si no se marca, el presupuesto indica que con factura se agrega el IVA.
-6. **Revisar presupuesto** → **Aprobar** → **Compartir PDF** (WhatsApp, correo, etc.), **Descargar PDF** o **Guardar**.
+6. **Condiciones**: anticipo, vigencia, cancelaciones, etc. Hay sugerencias de un toque y se pueden escribir libres. La nota del IVA siempre aparece como primera condición.
+7. **Notas** libres (p. ej. "Pendiente para coordinar detalles de entrega").
+8. **Revisar presupuesto** → **Aprobar** → **Compartir PDF** (WhatsApp, correo, etc.), **Descargar PDF** o **Guardar**.
 
 Los presupuestos guardados quedan en el navegador del dispositivo donde se hicieron.
 
 ## Cambiar precios o productos
 
 Edita `menu.js`. Cada producto tiene una o más presentaciones `{ t: "tamaño", p: precio }`.
-En el mismo archivo están las sugerencias de servicios (`TROTA_SERVICIOS`) y las variaciones rápidas (`TROTA_VARIACIONES`).
+En el mismo archivo están las sugerencias de servicios (`TROTA_SERVICIOS`), las condiciones sugeridas (`TROTA_CONDICIONES`) y las variaciones rápidas (`TROTA_VARIACIONES`).
 
 ## Archivos
 

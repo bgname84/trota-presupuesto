@@ -145,6 +145,18 @@ window.TROTA_SERVICIOS = [
   { n: "Branding de latas con logo", p: 0 }
 ];
 
+// Condiciones sugeridas (se agregan con un toque; también se pueden escribir libres).
+window.TROTA_CONDICIONES = [
+  "Precios en pesos mexicanos.",
+  "Vigencia del presupuesto: 15 días.",
+  "Para confirmar se requiere un anticipo del 50 %; el resto se liquida antes de la entrega.",
+  "Pago por transferencia o efectivo.",
+  "Cancelaciones con menos de 48 horas de anticipación no son reembolsables.",
+  "Si se confirma hoy mismo, brandeamos las latas con el logo sin costo.",
+  "Cambios en cantidades hasta 72 horas antes del evento.",
+  "La entrega incluye hielo y desechables; el servicio de personal se cotiza aparte."
+];
+
 // Variaciones rápidas de un producto del menú: factor sobre el precio.
 window.TROTA_VARIACIONES = [
   { n: "1/2", f: 0.5 },

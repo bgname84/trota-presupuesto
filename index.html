@@ -134,6 +134,8 @@
   .tabs button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
   .chips { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0; -webkit-overflow-scrolling: touch; }
   .chips::-webkit-scrollbar { display: none; }
+  .chips.wrap { flex-wrap: wrap; overflow: visible; }
+  .chips.wrap .chip { white-space: normal; text-align: left; font-size: 13px; }
   .chip { border: 1px solid var(--line); background: #fff; padding: 6px 12px; border-radius: 999px; font-size: 14px; white-space: nowrap; }
   .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
   .chip.blue.on { background: var(--blue); border-color: var(--blue); }
@@ -169,7 +171,9 @@
   .sheet .tot { margin: 16px 0 0 auto; width: 100%; max-width: 320px; font-size: 14px; }
   .sheet .tot div { display: flex; justify-content: space-between; padding: 3px 0; }
   .sheet .tot .big { font-weight: 800; font-size: 17px; border-top: 1px solid #111; margin-top: 4px; padding-top: 6px; }
-  .sheet .notes { margin: 22px 0 0; font-size: 14px; white-space: pre-wrap; }
+  .sheet .notes { margin: 14px 0 0; font-size: 14px; white-space: pre-wrap; }
+  .sheet .conds { margin: 4px 0 0; padding-left: 20px; font-size: 14px; }
+  .sheet .conds li { margin: 2px 0; }
   .sheet .foot { margin: 28px -20px 0; }
   .sheet .foot img { display: block; width: 100%; }
   .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
@@ -261,7 +265,7 @@ function nuevoFolio() {
 function nuevoPresupuesto() {
   return {
     id: uid(), folio: nuevoFolio(), status: "borrador", fecha: hoy(), cliente: "", evento: "", entrega: "",
-    lineas: [], descuento: 0, factura: false, notas: "Pendiente para coordinar detalles de entrega.",
+    lineas: [], descuento: 0, factura: false, condiciones: [], notas: "Pendiente para coordinar detalles de entrega.",
     createdAt: Date.now(), updatedAt: Date.now()
   };
 }
@@ -285,6 +289,8 @@ function grupos(q) {
 function nombreLinea(l) { return l.nombre + (l.var ? " · " + l.var : ""); }
 function notaIva(q) { return q.factura ? "Se requiere factura: el total incluye el 16% de IVA." : "Si desean factura, al precio se agrega el 16% de IVA."; }
 function persistir() { if (state.quote) ls(LS_CUR, state.quote); }
+function normalizar(q) { q.condiciones = Array.isArray(q.condiciones) ? q.condiciones : []; q.lineas = q.lineas || []; return q; }
+function condicionesLista(q) { return [notaIva(q)].concat((q.condiciones || []).map(c => c.trim()).filter(Boolean)); }
 
 /* ---------- navegación ---------- */
 function go(screen) { state.screen = screen; window.scrollTo(0, 0); render(); }
@@ -347,7 +353,7 @@ function renderHome() {
     const del = e.target.closest("[data-del]");
     if (del) { if (confirm("¿Eliminar este presupuesto?")) { eliminar(del.dataset.del); renderHome(); } return; }
     const it = e.target.closest(".item");
-    if (it) { state.quote = JSON.parse(JSON.stringify(list.find(q => q.id === it.dataset.id))); persistir(); go(state.quote.status === "aprobado" ? "review" : "editor"); }
+    if (it) { state.quote = normalizar(JSON.parse(JSON.stringify(list.find(q => q.id === it.dataset.id)))); persistir(); go(state.quote.status === "aprobado" ? "review" : "editor"); }
   };
 }
 
@@ -402,7 +408,19 @@ function renderEditor() {
         <div class="field" style="width:120px"><label>Equivale a</label><div class="inp money" style="border-color:transparent;background:var(--bg)">−${money(c.desc)}</div></div>
       </div>
       <label class="check"><input type="checkbox" data-q="factura" ${q.factura ? "checked" : ""}> Requiere factura (se agrega 16% de IVA)</label>
-      <div class="field"><label>Notas</label><textarea data-q="notas">${esc(q.notas)}</textarea></div>
+    </div>
+
+    <div class="card">
+      <h2>Condiciones</h2>
+      <p class="small muted" style="margin:0 0 8px">Siempre se incluye: "<span id="ivaNote">${esc(notaIva(q))}</span>"</p>
+      <div id="conds">${q.condiciones.map((c, i) => `<div class="row cond" data-i="${i}" style="margin-bottom:8px"><textarea class="inp" data-cond rows="2" placeholder="Escribe una condición" style="min-height:0">${esc(c)}</textarea><button class="del" data-delcond title="Quitar">×</button></div>`).join("")}</div>
+      <div class="chips wrap">${TROTA_CONDICIONES.filter(c => !q.condiciones.includes(c)).map(c => `<button class="chip" data-sugcond="${esc(c)}">+ ${esc(c.length > 38 ? c.slice(0, 36) + "…" : c)}</button>`).join("")}</div>
+      <button class="btn block sm" id="addCond">+ Agregar condición</button>
+    </div>
+
+    <div class="card">
+      <h2>Notas</h2>
+      <div class="field"><textarea data-q="notas" placeholder="Comentarios adicionales">${esc(q.notas)}</textarea></div>
     </div>
 
     <div class="card">
@@ -420,6 +438,13 @@ function renderEditor() {
   $("#save").onclick = () => { guardar(q); toast("Presupuesto guardado"); };
   $("#add").onclick = () => openModal();
   $("#review").onclick = () => { if (!q.lineas.length) return toast("Agrega al menos un producto"); go("review"); };
+
+  // Condiciones
+  const redibujarCond = (focusLast) => { const y = window.scrollY; renderEditor(); window.scrollTo(0, y); if (focusLast) { const ins = app.querySelectorAll("[data-cond]"); ins[ins.length - 1]?.focus(); } };
+  $("#addCond").onclick = () => { q.condiciones.push(""); persistir(); redibujarCond(true); };
+  ed.querySelectorAll("[data-sugcond]").forEach(b => b.onclick = () => { q.condiciones.push(b.dataset.sugcond); persistir(); redibujarCond(false); });
+  ed.querySelectorAll("[data-cond]").forEach(inp => inp.addEventListener("input", () => { q.condiciones[Number(inp.closest(".cond").dataset.i)] = inp.value; persistir(); }));
+  ed.querySelectorAll("[data-delcond]").forEach(b => b.onclick = () => { q.condiciones.splice(Number(b.closest(".cond").dataset.i), 1); persistir(); redibujarCond(false); });
 
   // Campos generales
   app.querySelectorAll("[data-q]").forEach(el => {
@@ -462,6 +487,7 @@ function renderEditor() {
     $("#totals").innerHTML = totalsHTML(c2, q); $("#stickyTotal").textContent = money(c2.total);
     const eq = app.querySelector("[data-q=descuento]")?.closest(".row")?.querySelector(".inp"); if (eq) eq.textContent = "−" + money(c2.desc);
     $(".sticky .l").textContent = "Total" + (q.factura ? " con IVA" : "");
+    const iv = $("#ivaNote"); if (iv) iv.textContent = notaIva(q);
   }
 }
 function totalsHTML(c, q) {
@@ -598,7 +624,9 @@ function sheetHTML(q, c) {
       ${q.factura ? `<div><span>IVA 16%</span><span class="money">${money(c.iva)}</span></div>` : ""}
       <div class="big"><span>Total</span><span class="money">${money(c.total)}</span></div>
     </div>
-    <div class="notes">${esc(notaIva(q))}${q.notas ? "\n" + esc(q.notas) : ""}</div>
+    <h4>CONDICIONES</h4>
+    <ul class="conds">${condicionesLista(q).map(c => `<li>${esc(c)}</li>`).join("")}</ul>
+    ${q.notas ? `<div class="notes">${esc(q.notas)}</div>` : ""}
     <div class="foot"><img src="${TROTA_ASSETS.footer}" alt="trota.mx · Mérida 81 Roma Norte CDMX"></div>
   </div>`;
 }
@@ -657,10 +685,19 @@ function generarPDF(q) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(12.5);
   doc.text("Total", lx, y); doc.text(money(c.total), rx, y, { align: "right" }); y += 12;
 
+  // Condiciones
+  ensure(14);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10.5); doc.text("CONDICIONES", ML, y); y += 6;
+  doc.setFont("helvetica", "normal");
+  condicionesLista(q).forEach(t => {
+    const lines = doc.splitTextToSize(t, CW - 6); ensure(lines.length * 5.2);
+    doc.text("•", ML + 1, y); doc.text(lines, ML + 6, y); y += lines.length * 5.2 + 0.8;
+  });
   // Notas
-  doc.setFont("helvetica", "normal"); doc.setFontSize(10.5);
-  const notas = [notaIva(q)].concat(q.notas ? q.notas.split("\n") : []);
-  notas.forEach(t => { const lines = doc.splitTextToSize(t, CW); ensure(lines.length * 5.5); doc.text(lines, ML, y); y += lines.length * 5.5; });
+  if (q.notas) {
+    y += 4;
+    q.notas.split("\n").forEach(t => { const lines = doc.splitTextToSize(t || " ", CW); ensure(lines.length * 5.5); doc.text(lines, ML, y); y += lines.length * 5.5; });
+  }
 
   // Pie de página en todas las páginas
   const n = doc.getNumberOfPages();
@@ -684,7 +721,7 @@ async function compartirPDF(q) {
 (function init() {
   if (ls(LS_AUTH)) {
     const cur = ls(LS_CUR);
-    if (cur && cur.status === "borrador" && cur.lineas && cur.lineas.length) { state.quote = cur; state.screen = "editor"; }
+    if (cur && cur.status === "borrador" && cur.lineas && cur.lineas.length) { state.quote = normalizar(cur); state.screen = "editor"; }
     else state.screen = "home";
   }
   render();
