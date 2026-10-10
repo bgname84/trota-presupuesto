@@ -143,6 +143,8 @@
   .mi .n { flex: 1; min-width: 140px; }
   .mi .sz { border: 1px solid var(--blue); color: var(--blue); background: #fff; border-radius: 8px; padding: 6px 10px; font-size: 14px; font-weight: 600; white-space: nowrap; }
   .mi .sz:active { background: var(--blue); color: #fff; }
+  .mi .del { font-size: 16px; }
+  select.inp, .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
   .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 100px; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; z-index: 30; opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
 
@@ -545,23 +547,56 @@ function openEditLine(l) {
 }
 
 /* ---------- modal agregar ---------- */
+/* ---------- catálogo editable (menú base + cambios guardados en el dispositivo) ---------- */
+const LS_CAT = "trota_catalogo";
+function catOverrides() { const o = ls(LS_CAT) || {}; return { edits: o.edits || {}, added: o.added || [], removed: o.removed || [] }; }
+function catalogo() {
+  const o = catOverrides(), cats = [], idx = {};
+  const put = (cat, item) => { if (idx[cat] === undefined) { idx[cat] = cats.length; cats.push({ cat, items: [] }); } cats[idx[cat]].items.push(item); };
+  TROTA_MENU.forEach(c => c.items.forEach(i => {
+    const id = "b:" + c.cat + "|" + i.n; if (o.removed.includes(id)) return;
+    const e = o.edits[id]; put(e ? e.cat : c.cat, { id, n: e ? e.n : i.n, s: e ? e.s : i.s, base: true, edited: !!e });
+  }));
+  o.added.forEach(a => put(a.cat, { id: a.id, n: a.n, s: a.s, base: false }));
+  return cats;
+}
+function itemPorId(id) { for (const c of catalogo()) for (const i of c.items) if (i.id === id) return { cat: c.cat, item: i }; return null; }
+function guardarItemCatalogo(id, data) {
+  const o = catOverrides();
+  if (!id) o.added.unshift({ id: "c:" + uid(), cat: data.cat, n: data.n, s: data.s });
+  else if (id.startsWith("b:")) o.edits[id] = { cat: data.cat, n: data.n, s: data.s };
+  else { const a = o.added.find(x => x.id === id); if (a) Object.assign(a, { cat: data.cat, n: data.n, s: data.s }); }
+  ls(LS_CAT, o);
+}
+function quitarItemCatalogo(id) {
+  const o = catOverrides();
+  if (id.startsWith("b:")) { if (!o.removed.includes(id)) o.removed.push(id); delete o.edits[id]; }
+  else o.added = o.added.filter(x => x.id !== id);
+  ls(LS_CAT, o);
+}
+function restaurarItemCatalogo(id) { const o = catOverrides(); delete o.edits[id]; o.removed = o.removed.filter(x => x !== id); ls(LS_CAT, o); }
+
+/* ---------- modal agregar ---------- */
 function openModal() {
-  state.modal = "menu"; state.search = ""; state.cat = "Todos"; state.variacion = "";
+  state.modal = "menu"; state.search = ""; state.cat = "Todos"; state.variacion = ""; state.editItem = null;
   const m = document.createElement("div"); m.className = "modal"; m.id = "modal"; document.body.appendChild(m);
   drawModal();
   function close() { m.remove(); renderEditor(); }
   function drawModal() {
     const q = state.quote;
-    const cats = ["Todos", ...TROTA_MENU.map(c => c.cat)];
+    if (state.modal === "item") return drawItemForm();
+    const CAT = catalogo();
+    const cats = ["Todos", ...CAT.map(c => c.cat)];
     const term = state.search.trim().toLowerCase();
-    const visibles = TROTA_MENU.filter(c => state.cat === "Todos" || c.cat === state.cat)
+    const factor = state.variacion ? TROTA_VARIACIONES.find(v => v.n === state.variacion).f : 1;
+    const visibles = CAT.filter(c => state.cat === "Todos" || c.cat === state.cat)
       .map(c => ({ cat: c.cat, items: c.items.filter(i => !term || i.n.toLowerCase().includes(term)) })).filter(c => c.items.length);
     m.innerHTML = `<div class="box">
       <div class="head"><h3>Agregar</h3><span class="muted small" id="count">${q.lineas.length} en el presupuesto</span><button class="btn primary sm" id="done">Listo</button></div>
       <div class="body">
-        <div class="tabs"><button data-tab="menu" class="${state.modal === "menu" ? "on" : ""}">Del menú</button><button data-tab="serv" class="${state.modal === "serv" ? "on" : ""}">Especiales</button></div>
+        <div class="tabs"><button data-tab="menu" class="${state.modal === "menu" ? "on" : ""}">Del menú</button><button data-tab="serv" class="${state.modal === "serv" ? "on" : ""}">Servicios y especiales</button></div>
         ${state.modal === "menu" ? `
-          <input class="inp" id="search" placeholder="Buscar producto…" value="${esc(state.search)}" style="margin-top:12px">
+          <div class="row" style="margin-top:12px"><input class="inp grow" id="search" placeholder="Buscar producto…" value="${esc(state.search)}"><button class="btn sm" id="newItem">+ Nuevo</button></div>
           <div class="chips" id="cats">${cats.map(c => `<button class="chip ${state.cat === c ? "on" : ""}" data-cat="${esc(c)}">${esc(c)}</button>`).join("")}</div>
           <div class="row small muted" style="gap:6px;flex-wrap:wrap"><span>Variación:</span>
             <button class="chip blue ${!state.variacion ? "on" : ""}" data-var="">Normal</button>
@@ -569,25 +604,26 @@ function openModal() {
           </div>
           <div id="items">${visibles.length ? visibles.map(c => `
             <div class="cat-title">${esc(c.cat)}</div>
-            ${c.items.map(i => `<div class="mi"><div class="n">${esc(i.n)}</div>
-              ${i.s.map((s, k) => `<button class="sz" data-add="${esc(c.cat)}|${esc(i.n)}|${k}">${esc(s.t)} · ${money(state.variacion ? Math.round(s.p * TROTA_VARIACIONES.find(v => v.n === state.variacion).f) : s.p)}</button>`).join("")}
+            ${c.items.map(i => `<div class="mi"><div class="n">${esc(i.n)}${i.base ? "" : ` <span class="tag">Nuevo</span>`}${i.edited ? ` <span class="tag">Editado</span>` : ""}</div>
+              ${i.s.map((sz, k) => `<button class="sz" data-add="${esc(i.id)}" data-k="${k}">${esc(sz.t)} · ${money(factor === 1 ? sz.p : Math.round(sz.p * factor))}</button>`).join("")}
+              <button class="del" data-edititem="${esc(i.id)}" title="Editar en el menú">✎</button>
             </div>`).join("")}`).join("") : `<div class="empty">Sin resultados.</div>`}
-          </div>`
+          </div>
+          <p class="small muted" style="margin-top:12px">Los productos nuevos y los cambios al menú quedan guardados en este dispositivo.</p>`
         : `
           ${especiales().length ? `<div class="cat-title">Mis especiales guardados</div>
           ${especiales().map(e => `<div class="mi"><div class="n">${esc(e.nombre)}${e.var ? ` <span class="muted">· ${esc(e.var)}</span>` : ""}<div class="small muted">${e.tipo === "servicio" ? "Servicio" : esc(e.tam || "Producto")}</div></div>
             <button class="sz" data-addesp="${e.id}">${money(e.precio)}</button><button class="del" data-delesp="${e.id}" title="Quitar de mis especiales">×</button></div>`).join("")}` : ""}
-          <div class="cat-title">Nuevo producto o servicio especial</div>
-          <div class="tabs" style="margin-bottom:10px"><button data-tipo="servicio" class="${state.tipoEsp === "servicio" ? "on" : ""}">Servicio</button><button data-tipo="producto" class="${state.tipoEsp === "producto" ? "on" : ""}">Producto</button></div>
-          ${state.tipoEsp === "servicio" ? `<div class="chips">${TROTA_SERVICIOS.map(s => `<button class="chip" data-sug="${esc(s.n)}|${s.p}">${esc(s.n)}</button>`).join("")}</div>` : ""}
-          <div class="field"><label>Nombre</label><input id="sn" placeholder="${state.tipoEsp === "servicio" ? "p. ej. Personal de apoyo" : "p. ej. Caja de galletas"}"></div>
+          <div class="cat-title">Nuevo servicio</div>
+          <div class="chips">${TROTA_SERVICIOS.map(s => `<button class="chip" data-sug="${esc(s.n)}|${s.p}">${esc(s.n)}</button>`).join("")}</div>
+          <div class="field"><label>Servicio</label><input id="sn" placeholder="p. ej. Personal de apoyo"></div>
           <div class="row">
             <div class="field grow"><label>Cantidad</label><input id="sc" type="number" inputmode="numeric" min="1" value="1"></div>
             <div class="field grow"><label>Precio unitario</label><input id="sp" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"></div>
           </div>
-          <div class="field"><label>${state.tipoEsp === "servicio" ? "Detalle (opcional)" : "Tamaño o detalle (opcional)"}</label><input id="sd" placeholder="${state.tipoEsp === "servicio" ? "p. ej. 2 personas por 4 horas" : "p. ej. 12 pzas"}"></div>
+          <div class="field"><label>Detalle (opcional)</label><input id="sd" placeholder="p. ej. 2 personas por 4 horas"></div>
           <label class="check"><input type="checkbox" id="sg" checked> Guardar en mis especiales para futuras cotizaciones</label>
-          <p class="small muted">${state.tipoEsp === "servicio" ? "Los servicios no llevan el descuento general." : "Los productos sí llevan el descuento general."}</p>
+          <p class="small muted">Los servicios no llevan el descuento general. Para un producto nuevo usa "Del menú → + Nuevo".</p>
           <button class="btn primary block" id="addServ">Agregar al presupuesto</button>`}
       </div></div>`;
     $("#done", m).onclick = close;
@@ -596,16 +632,17 @@ function openModal() {
     if (state.modal === "menu") {
       const se = $("#search", m);
       se.oninput = () => { state.search = se.value; const pos = se.selectionStart; drawModal(); const se2 = $("#search", m); se2.focus(); se2.setSelectionRange(pos, pos); };
+      $("#newItem", m).onclick = () => { state.editItem = null; state.modal = "item"; drawModal(); };
       m.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => { state.cat = b.dataset.cat; drawModal(); });
       m.querySelectorAll("[data-var]").forEach(b => b.onclick = () => { state.variacion = b.dataset.var; drawModal(); });
+      m.querySelectorAll("[data-edititem]").forEach(b => b.onclick = () => { state.editItem = b.dataset.edititem; state.modal = "item"; drawModal(); });
       m.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
-        const [cat, n, k] = b.dataset.add.split("|"); const item = TROTA_MENU.find(c => c.cat === cat).items.find(i => i.n === n); const s = item.s[Number(k)];
+        const r = itemPorId(b.dataset.add); if (!r) return; const sz = r.item.s[Number(b.dataset.k)];
         const v = TROTA_VARIACIONES.find(x => x.n === state.variacion);
-        q.lineas.push({ id: uid(), tipo: "producto", cat, nombre: n, tam: s.t, var: v ? v.n : "", precioBase: s.p, precio: v ? Math.round(s.p * v.f) : s.p, cant: 1 });
-        persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + n + (v ? " · " + v.n : ""));
+        q.lineas.push({ id: uid(), tipo: "producto", cat: r.cat, nombre: r.item.n, tam: sz.t, var: v ? v.n : "", precioBase: sz.p, precio: v ? Math.round(sz.p * v.f) : sz.p, cant: 1 });
+        persistir(); $("#count", m).textContent = q.lineas.length + " en el presupuesto"; toast("Agregado: " + r.item.n + (v ? " · " + v.n : ""));
       });
     } else {
-      m.querySelectorAll("[data-tipo]").forEach(b => b.onclick = () => { state.tipoEsp = b.dataset.tipo; drawModal(); });
       m.querySelectorAll("[data-sug]").forEach(b => b.onclick = () => { const [n, p] = b.dataset.sug.split("|"); $("#sn", m).value = n; $("#sp", m).value = p; $("#sp", m).focus(); });
       m.querySelectorAll("[data-addesp]").forEach(b => b.onclick = () => {
         const e = especiales().find(x => x.id === b.dataset.addesp); if (!e) return;
@@ -614,13 +651,50 @@ function openModal() {
       });
       m.querySelectorAll("[data-delesp]").forEach(b => b.onclick = () => { quitarEspecial(b.dataset.delesp); drawModal(); });
       $("#addServ", m).onclick = () => {
-        const n = $("#sn", m).value.trim(); if (!n) return toast("Escribe el nombre");
-        const esServ = state.tipoEsp === "servicio", det = $("#sd", m).value.trim(), precio = Number($("#sp", m).value) || 0;
-        q.lineas.push({ id: uid(), tipo: state.tipoEsp, cat: esServ ? "Servicios" : "Especiales", nombre: n, var: esServ ? det : "", tam: esServ ? "" : det, precio, cant: Number($("#sc", m).value) || 1 });
-        if ($("#sg", m).checked) { guardarEspecial({ tipo: state.tipoEsp, nombre: n, var: esServ ? det : "", tam: esServ ? "" : det, precio }); toast("Guardado en mis especiales"); }
+        const n = $("#sn", m).value.trim(); if (!n) return toast("Escribe el nombre del servicio");
+        const det = $("#sd", m).value.trim(), precio = Number($("#sp", m).value) || 0;
+        q.lineas.push({ id: uid(), tipo: "servicio", cat: "Servicios", nombre: n, var: det, tam: "", precio, cant: Number($("#sc", m).value) || 1 });
+        if ($("#sg", m).checked) { guardarEspecial({ tipo: "servicio", nombre: n, var: det, tam: "", precio }); toast("Guardado en mis especiales"); }
         persistir(); close();
       };
     }
+  }
+  // Formulario de producto del menú (nuevo o existente)
+  function drawItemForm() {
+    const id = state.editItem, r = id ? itemPorId(id) : null, nuevo = !r;
+    const cats = catalogo().map(c => c.cat); if (!nuevo && !cats.includes(r.cat)) cats.push(r.cat);
+    const catSel = nuevo ? (state.cat !== "Todos" ? state.cat : cats[0]) : r.cat;
+    const sizes = nuevo ? [{ t: "", p: "" }] : r.item.s.map(x => ({ t: x.t, p: x.p }));
+    const sizeRow = (sz) => `<div class="row szrow" style="margin-bottom:8px"><input class="inp grow" data-t value="${esc(sz.t)}" placeholder="Tamaño (p. ej. G 12 oz, pza)"><input class="inp" data-p type="number" inputmode="decimal" min="0" step="0.01" value="${esc(sz.p)}" placeholder="Precio" style="width:110px"><button class="del" data-rmsz title="Quitar">×</button></div>`;
+    m.innerHTML = `<div class="box">
+      <div class="head"><h3>${nuevo ? "Nuevo producto del menú" : "Editar producto del menú"}</h3><button class="btn ghost sm" id="back">Volver</button></div>
+      <div class="body">
+        <div class="field"><label>Categoría</label>
+          <select id="icat">${cats.map(c => `<option ${c === catSel ? "selected" : ""}>${esc(c)}</option>`).join("")}<option value="__nueva">+ Nueva categoría…</option></select>
+          <input class="inp hidden" id="icatn" placeholder="Nombre de la nueva categoría" style="margin-top:8px"></div>
+        <div class="field"><label>Nombre del producto</label><input id="iname" value="${nuevo ? "" : esc(r.item.n)}" placeholder="p. ej. Carajillo"></div>
+        <div class="field"><label>Presentaciones y precios</label><div id="sizes">${sizes.map(sizeRow).join("")}</div>
+          <button class="btn sm" id="addsz">+ Agregar presentación</button></div>
+        <button class="btn primary block" id="isave">${nuevo ? "Guardar en el menú" : "Guardar cambios"}</button>
+        ${!nuevo && r.item.edited ? `<button class="btn block" id="irestore" style="margin-top:8px">Restaurar el original del menú</button>` : ""}
+        ${!nuevo ? `<button class="btn ghost block danger" id="idel" style="margin-top:8px">Quitar del menú</button>` : ""}
+      </div></div>`;
+    const back = () => { state.modal = "menu"; drawModal(); };
+    $("#back", m).onclick = back; m.onclick = (e) => { if (e.target === m) back(); };
+    const sel = $("#icat", m), catn = $("#icatn", m);
+    sel.onchange = () => { catn.classList.toggle("hidden", sel.value !== "__nueva"); if (sel.value === "__nueva") catn.focus(); };
+    $("#addsz", m).onclick = () => { $("#sizes", m).insertAdjacentHTML("beforeend", sizeRow({ t: "", p: "" })); bindRm(); };
+    const bindRm = () => m.querySelectorAll("[data-rmsz]").forEach(b => b.onclick = () => { if (m.querySelectorAll(".szrow").length > 1) b.closest(".szrow").remove(); });
+    bindRm();
+    $("#isave", m).onclick = () => {
+      const cat = sel.value === "__nueva" ? catn.value.trim() : sel.value; if (!cat) return toast("Escribe la categoría");
+      const n = $("#iname", m).value.trim(); if (!n) return toast("Escribe el nombre del producto");
+      const s = [...m.querySelectorAll(".szrow")].map(rw => ({ t: rw.querySelector("[data-t]").value.trim() || "pza", p: Number(rw.querySelector("[data-p]").value) })).filter(x => x.p > 0);
+      if (!s.length) return toast("Agrega al menos una presentación con precio");
+      guardarItemCatalogo(id, { cat, n, s }); state.cat = cat; state.search = ""; toast(nuevo ? "Producto agregado al menú" : "Menú actualizado"); back();
+    };
+    if ($("#irestore", m)) $("#irestore", m).onclick = () => { restaurarItemCatalogo(id); toast("Restaurado"); back(); };
+    if ($("#idel", m)) $("#idel", m).onclick = () => { if (confirm("¿Quitar este producto del menú?")) { quitarItemCatalogo(id); toast("Quitado del menú"); back(); } };
   }
 }
 
